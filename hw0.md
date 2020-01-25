@@ -197,7 +197,6 @@ int main() {
 	*(smoore->friends) = asmith;
 	person_destroy(asmith);
 	person_destroy(smoore);
-	printf("Hello world!\n");
 	return 0;
 }
 

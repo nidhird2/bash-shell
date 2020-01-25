@@ -178,7 +178,7 @@ typedef struct person person_t;
 person_t* person_create(char* name, int age){
 	person_t* result = (person_t*)malloc(sizeof(person_t));
 	result-> age = age;
-	result->friends = (person_t**)malloc(sizeof(person_t*) * 10);
+	result->friends = (person_t**)malloc(sizeof(person_t*[10]));
 	result->name = strdup(name);
 	return result;
 }
@@ -193,8 +193,8 @@ void person_destroy(person_t* p){
 int main() {
 	person_t* asmith = person_create("Agent Smith", 128);
 	person_t* smoore = person_create("Sonny Moore", 256);
-	*(asmith->friends) = smoore;
-	*(smoore->friends) = asmith;
+	asmith->friends[0] = smoore;
+	smoore->friends[0] = asmith;
 	person_destroy(asmith);
 	person_destroy(smoore);
 	return 0;

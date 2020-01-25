@@ -103,9 +103,9 @@ The string is in read-only memory, so it can not be written to.
 8. What does `strlen("Hello\0World")` return?
 5
 9. Give an example of X such that `sizeof(X)` is 3.
-X = "ab"
+char* X = "ab"
 10. Give an example of Y such that `sizeof(Y)` might be 4 or 8 depending on the machine.
-Y = 5
+long Y = 5
 ## Chapter 3
 
 Program arguments, environment variables, and working with character arrays (strings)

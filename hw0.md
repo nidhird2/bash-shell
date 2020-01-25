@@ -213,7 +213,7 @@ Text input and output and parsing using `getchar`, `gets`, and `getline`.
 - Writing to stdout: puts(), 
 ```
 2. Name one issue with `gets()`.
-  Gets() does not provide any control of how much input to read. This can lead to buffer overflow and subsequently memory corruption.
+  Gets() does not give control of how much input to read. This can lead to buffer overflow and subsequently memory corruption.
 ### Introducing `sscanf` and friends
 3. Write code that parses the string "Hello 5 World" and initializes 3 variables to "Hello", 5, and "World".
 ```c

@@ -73,7 +73,7 @@ Sizing up C types and their limits, `int` and `char` arrays, and incrementing po
 
 ### Not all bytes are 8 bits?
 1. How many bits are there in a byte?
-At least 1
+At least 1, no more than 8
 2. How many bytes are there in a `char`?
 1
 3. How many bytes the following are on your machine?

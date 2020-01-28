@@ -84,7 +84,7 @@ int whitespace(char**(*camelCaser)(const char*), void(*destroy)(char**)){
     }
     destroy(output);
     return result;
-    }
+}
 
 int checkEmpty(char**(*camelCaser)(const char*), void(*destroy)(char**)){
     char* input = "";
@@ -96,7 +96,7 @@ int checkEmpty(char**(*camelCaser)(const char*), void(*destroy)(char**)){
     }
     destroy(output);
     return result;
-    }
+}
 
 int checkAllSpaces(char **(*camelCaser)(const char*), void(*destroy)(char**)){
     char* input = "	   	";
@@ -108,7 +108,7 @@ int checkAllSpaces(char **(*camelCaser)(const char*), void(*destroy)(char**)){
     }
     destroy(output);
     return result;
-    }
+}
 
 int checkAllNums(char **(*camelCaser)(const char*), void(* destroy)(char**)){
     char* input = " 1 2 3 	. 4567 89. 012.  345 678.";
@@ -120,7 +120,7 @@ int checkAllNums(char **(*camelCaser)(const char*), void(* destroy)(char**)){
     }
     destroy(output);
     return result;
-    }
+}
 
 int checkMultPunc(char **(*camelCaser)(const char*), void(* destroy)(char**)){
     char* input = "  abc dEF  . ! ? gHiJ\",. KLMNO..";
@@ -132,7 +132,19 @@ int checkMultPunc(char **(*camelCaser)(const char*), void(* destroy)(char**)){
     }
     destroy(output);
     return result;
+}
+
+int checkOtherChars(char **(*camelCaser)(const char*), void(*destroy)(char**)){
+    char* input = "@s#o &*abs  \n";
+    char* exp[] = {"","s","o","",NULL};
+    char **output = camelCaser(input);
+    int result = 1;
+    if(!checkIfMatch(output, exp)){
+	result = 0;
     }
+    destroy(output);
+    return result;
+}
 
 int test_camelCaser(char **(*camelCaser)(const char *),
                     void (*destroy)(char **)) {
@@ -175,6 +187,11 @@ int test_camelCaser(char **(*camelCaser)(const char *),
 
    if(!checkMultPunc(camelCaser, destroy)){
 	//printf("multpunc input failed\n");
+	return 0;
+   }
+   
+   if(!checkOtherChars(camelCaser, destroy)){
+	//printf("other chars input failed\n");
 	return 0;
    }
    

@@ -9,14 +9,27 @@
 #include "camelCaser.h"
 #include "camelCaser_tests.h"
 
+int findSize(char** actual){
+    int count = 0;
+    int idx = 0;
+    while(actual[idx] != NULL){
+	count++;
+	idx++;
+    }
+    return count;
+}
+
 int checkIfMatch(char** actual, char** expected){
-    if(sizeof(actual) != sizeof(expected)){
+    int len = findSize(actual);
+    int len2 = findSize(expected);
+    if(len != len2){
 	return 0;
     }
-    int len = sizeof(actual) / sizeof(actual[0]);
     int i = 0;
-    for(i = 0; i < (len - 1); i++){
-	printf("YIKES\n");
+//    printf("len: %d\n", len);
+    for(i = 0; i < len; i++){
+	//printf("ac: %s\n", actual[i]);
+	//printf("ex: %s\n", expected[i]);
 	if(strcmp(actual[i], expected[i]) != 0){
 		return 0;
 	}
@@ -37,7 +50,7 @@ int checkNull(char **(*camelCaser)(const char *), void (*destroy)(char**)){
 
 int checkOneSentence(char **(*camelCaser)(const char*), void (*destroy)(char**)){
     char* input = "hello world.";
-    char* exp[] = {"helloWord", NULL};
+    char* exp[] = {"helloWorld", NULL};
     char **output = camelCaser(input);
     int result = 1;
     if(!checkIfMatch(output, exp)){
@@ -70,7 +83,18 @@ int check4(char**(*camelCaser)(const char*), void(*destroy)(char**)){
     destroy(output);
     return result;
     }
-    
+
+int check5(char**(*camelCaser)(const char*), void(*destroy)(char**)){
+    char* input = "";
+    char* exp[] = {NULL};
+    char **output = camelCaser(input);
+    int result = 1;
+    if(!checkIfMatch(output, exp)){
+	result = 0;
+    }
+    destroy(output);
+    return result;
+    }    
 
 int test_camelCaser(char **(*camelCaser)(const char *),
                     void (*destroy)(char **)) {
@@ -91,8 +115,13 @@ int test_camelCaser(char **(*camelCaser)(const char *),
 	return 0;
    }
   
- if(!check4(camelCaser, destroy)){
+   if(!check4(camelCaser, destroy)){
 	printf("check4: failed\n");
+	return 0;
+   }
+
+   if(!check5(camelCaser, destroy)){
+	printf("empty string input failed\n");
 	return 0;
    }
    return result;

@@ -64,7 +64,7 @@ char **camel_caser(const char *input_str) {
     int isPreviousSpace = 1;
     int isFirstWord = 1;
     int currentIdx = 0;
-    while(currentIdx < num_sentences){
+    while(*current){
 	//printf("current: %s\n", current);
 	if(currentIdx == num_sentences){
 		break;

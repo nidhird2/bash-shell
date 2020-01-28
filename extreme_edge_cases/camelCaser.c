@@ -52,6 +52,7 @@ char **camel_caser(const char *input_str) {
     }
     int num_sentences = countSentences(input_str);
     int totalChars = countChars(input_str);
+//    printf("sentences: %d, total chars: %d\n", num_sentences, totalChars);
     char* wordSpace = (char*)malloc(totalChars);
     result = (char**)malloc(sizeof(char*)*(num_sentences+1));
     const char* current = input_str;
@@ -59,7 +60,12 @@ char **camel_caser(const char *input_str) {
     int isPreviousSpace = 1;
     int isFirstWord = 1;
     int currentIdx = 0;
+    //printf("got to loop\n");
     while(*current){
+	//printf("current: %s\n", current);
+	if(currentIdx == num_sentences){
+		break;
+	}
 	if(isspace(*current)){
 		isPreviousSpace = 1;
 		current++;

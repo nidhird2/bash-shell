@@ -140,40 +140,43 @@ int test_camelCaser(char **(*camelCaser)(const char *),
    int result = 1;
 
   if(!checkNull(camelCaser, destroy)){
-	printf("checkNull failed.\n");
+	//printf("checkNull failed.\n");
 	return 0;
    }
    if(!checkOneSentence(camelCaser, destroy)){
-	printf("check one sentence failed.\n");
+	//printf("check one sentence failed.\n");
 	return 0;
    }
 
    if(!noSpaces(camelCaser,destroy)){
-	printf("noSpaces: no sentences failed.\n");
+	//printf("noSpaces: no sentences failed.\n");
 	return 0;
    }
   
    if(!whitespace(camelCaser, destroy)){
-	printf("check4:whitespace failed\n");
+	//printf("check4:whitespace failed\n");
 	return 0;
    }
 
    if(!checkEmpty(camelCaser, destroy)){
-	printf("empty string input failed\n");
+	//printf("empty string input failed\n");
 	return 0;
    }
+
    if(!checkAllSpaces(camelCaser,destroy)){
-	printf("all spaces input failed\n");
+	//printf("all spaces input failed\n");
 	return 0;
    }
+
    if(!checkAllNums(camelCaser, destroy)){
-	printf("check all nums input failed\n");
+	//printf("check all nums input failed\n");
 	return 0;
    }
 
    if(!checkMultPunc(camelCaser, destroy)){
-	printf("multpunc input failed\n");
+	//printf("multpunc input failed\n");
 	return 0;
    }
+   
    return result;
 }

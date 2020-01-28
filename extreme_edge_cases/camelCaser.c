@@ -55,13 +55,16 @@ char **camel_caser(const char *input_str) {
 //    printf("sentences: %d, total chars: %d\n", num_sentences, totalChars);
     char* wordSpace = (char*)malloc(totalChars);
     result = (char**)malloc(sizeof(char*)*(num_sentences+1));
+    if(num_sentences == 0){
+	free(wordSpace);
+	wordSpace = NULL;
+    }
     const char* current = input_str;
     char* currentSpace = wordSpace;
     int isPreviousSpace = 1;
     int isFirstWord = 1;
     int currentIdx = 0;
-    //printf("got to loop\n");
-    while(*current){
+    while(currentIdx < num_sentences){
 	//printf("current: %s\n", current);
 	if(currentIdx == num_sentences){
 		break;
@@ -100,7 +103,6 @@ char **camel_caser(const char *input_str) {
 }
 
 void destroy(char **result) {
-    // TODO: Implement me!
     if(result == NULL){
 	return;
     }

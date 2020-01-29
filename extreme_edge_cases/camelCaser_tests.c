@@ -54,10 +54,7 @@ int checkOneSentence(char **(*camelCaser)(const char*), void (*destroy)(char**))
     char* input = "hello world.";
     char* exp[] = {"helloWorld", NULL};
     char **output = camelCaser(input);
-    int result = 1;
-    if(!checkIfMatch(output, exp)){
-	result = 0;
-    }
+    int result = checkIfMatch(output, exp);
     destroy(output);
     return result;
 }
@@ -66,10 +63,7 @@ int noSpaces(char**(*camelCaser)(const char*), void (*destroy)(char**)){
     char* input = "faslfjsljlkxn,mcngsaAGSSDF";
     char* exp[] ={"faslfjsljlkxn", NULL};
     char **output = camelCaser(input);
-    int result = 1;
-    if(!checkIfMatch(output, exp)){
-	result = 0;
-    }
+    int result = checkIfMatch(output, exp);
     destroy(output);
     return result;
 }
@@ -78,10 +72,7 @@ int whitespace(char**(*camelCaser)(const char*), void(*destroy)(char**)){
     char* input = "  spaceSpace space  !   	 Space space.";
     char* exp[] = {"spacespaceSpace","spaceSpace",NULL};
     char **output = camelCaser(input);
-    int result = 1;
-    if(!checkIfMatch(output, exp)){
-	result = 0;
-    }
+    int result = checkIfMatch(output, exp);
     destroy(output);
     return result;
 }
@@ -90,10 +81,7 @@ int checkEmpty(char**(*camelCaser)(const char*), void(*destroy)(char**)){
     char* input = "";
     char* exp[] = {NULL};
     char **output = camelCaser(input);
-    int result = 1;
-    if(!checkIfMatch(output, exp)){
-	result = 0;
-    }
+    int result = checkIfMatch(output, exp);
     destroy(output);
     return result;
 }
@@ -102,10 +90,7 @@ int checkAllSpaces(char **(*camelCaser)(const char*), void(*destroy)(char**)){
     char* input = "	   	";
     char* exp[] = {NULL};
     char **output = camelCaser(input);
-    int result = 1;
-    if(!checkIfMatch(output, exp)){
-	result = 0;
-    }
+    int result = checkIfMatch(output, exp);
     destroy(output);
     return result;
 }
@@ -114,10 +99,7 @@ int checkAllNums(char **(*camelCaser)(const char*), void(* destroy)(char**)){
     char* input = " 1 2 3 	. 4567 89. 012.  345 678.";
     char* exp[] = {"123", "456789", "012", "345678", NULL};
     char **output = camelCaser(input);
-    int result = 1;
-    if(!checkIfMatch(output,exp)){
-	result = 0;
-    }
+    int result = checkIfMatch(output,exp);
     destroy(output);
     return result;
 }
@@ -126,10 +108,7 @@ int checkMultPunc(char **(*camelCaser)(const char*), void(* destroy)(char**)){
     char* input = "  abc dEF  . ! ? gHiJ\",. KLMNO..";
     char* exp[] = {"abcDef","","","ghij","","","klmno","",NULL};
     char **output = camelCaser(input);
-    int result = 1;
-    if(!checkIfMatch(output,exp)){
-	result = 0;
-    }
+    int result = checkIfMatch(output,exp);
     destroy(output);
     return result;
 }
@@ -138,10 +117,16 @@ int checkOtherChars(char **(*camelCaser)(const char*), void(*destroy)(char**)){
     char* input = "@s#o &*abs  \n";
     char* exp[] = {"","s","o","",NULL};
     char **output = camelCaser(input);
-    int result = 1;
-    if(!checkIfMatch(output, exp)){
-	result = 0;
-    }
+    int result = checkIfMatch(output, exp);
+    destroy(output);
+    return result;
+}
+
+int testCombo(char **(*camelCaser)(const char*), void (*destroy)(char **)){
+    char* input = "\\ \' \" \t    DEAD  \\   AT    40     YEARS  \\";
+    char* exp[] = {"","","","dead","at40Years",NULL};
+    char **output = camelCaser(input);
+    int result = checkIfMatch(output,exp);
     destroy(output);
     return result;
 }
@@ -149,9 +134,7 @@ int checkOtherChars(char **(*camelCaser)(const char*), void(*destroy)(char**)){
 int test_camelCaser(char **(*camelCaser)(const char *),
                     void (*destroy)(char **)) {
 
-   int result = 1;
-
-  if(!checkNull(camelCaser, destroy)){
+   if(!checkNull(camelCaser, destroy)){
 	//printf("checkNull failed.\n");
 	return 0;
    }
@@ -159,41 +142,37 @@ int test_camelCaser(char **(*camelCaser)(const char *),
 	//printf("check one sentence failed.\n");
 	return 0;
    }
-
    if(!noSpaces(camelCaser,destroy)){
 	//printf("noSpaces: no sentences failed.\n");
 	return 0;
    }
-  
    if(!whitespace(camelCaser, destroy)){
 	//printf("check4:whitespace failed\n");
 	return 0;
    }
-
    if(!checkEmpty(camelCaser, destroy)){
 	//printf("empty string input failed\n");
 	return 0;
    }
-
    if(!checkAllSpaces(camelCaser,destroy)){
 	//printf("all spaces input failed\n");
 	return 0;
    }
-
    if(!checkAllNums(camelCaser, destroy)){
 	//printf("check all nums input failed\n");
 	return 0;
    }
-
    if(!checkMultPunc(camelCaser, destroy)){
 	//printf("multpunc input failed\n");
 	return 0;
    }
-   
    if(!checkOtherChars(camelCaser, destroy)){
 	//printf("other chars input failed\n");
 	return 0;
    }
-   
-   return result;
+   if(!testCombo(camelCaser, destroy)){
+	//printf("combo input failed\n");
+	return 0;
+   }
+   return 1;
 }

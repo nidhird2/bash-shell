@@ -49,7 +49,7 @@ int checkNull(char **(*camelCaser)(const char *), void (*destroy)(char**)){
 }
 
 int checkOneSentence(char **(*camelCaser)(const char*), void (*destroy)(char**)){
-    char* input = "hello world.";
+    char* input = "HELLO WORLD.";
     char* exp[] = {"helloWorld", NULL};
     char **output = camelCaser(input);
     int result = checkIfMatch(output, exp);
@@ -67,7 +67,7 @@ int noSpaces(char**(*camelCaser)(const char*), void (*destroy)(char**)){
 }
 
 int whitespace(char**(*camelCaser)(const char*), void(*destroy)(char**)){
-    char* input = "  spaceSpace space  !   	 Space space.";
+    char* input = "   spaceSpace	 space   !   	 Space   space.		";
     char* exp[] = {"spacespaceSpace","spaceSpace",NULL};
     char **output = camelCaser(input);
     int result = checkIfMatch(output, exp);
@@ -121,8 +121,8 @@ int checkOtherChars(char **(*camelCaser)(const char*), void(*destroy)(char**)){
 }
 
 int testCombo(char **(*camelCaser)(const char*), void (*destroy)(char **)){
-    char* input = "\\ \' \" \t    DEAD  \\   AT    40     YEARS  \\";
-    char* exp[] = {"","","","dead","at40Years",NULL};
+    char* input = "\\ \' \" \t    DE\nAD  \\   AT    41     YEARS  \\";
+    char* exp[] = {"","","","deAd","at41Years",NULL};
     char **output = camelCaser(input);
     int result = checkIfMatch(output,exp);
     destroy(output);
@@ -134,6 +134,15 @@ int testNoPunc(char **(*camelCaser)(const char*), void(*destroy)(char **)){
     char* exp[] = {NULL};
     char** output = camelCaser(input);
     int result = checkIfMatch(output,exp);
+    destroy(output);
+    return result;
+}
+
+int testCaps(char** (*camelCaser)(const char*), void(*destroy)(char**)){
+    char* input = " TODAY iS wEDnESDAY.! TOMORROW iS tHURSDAY!! PIZZA iS tHE bEST wHEN iTS cHEESE. i could use SOME pizza";
+    char* exp[] = {"todayIsWednesday", "", "tomorrowIsThursday", "", "pizzaIsTheBestWhenItsCheese", NULL};
+    char** output = camelCaser(input);
+    int result = checkIfMatch(output, exp);
     destroy(output);
     return result;
 }
@@ -183,6 +192,10 @@ int test_camelCaser(char **(*camelCaser)(const char *),
    }
    if(!testNoPunc(camelCaser, destroy)){
 	//printf("test no punc failed\n");
+	return 0;
+   }
+   if(!testCaps(camelCaser, destroy)){
+	//printrf("test caps failed\n");
 	return 0;
    }
    return 1;

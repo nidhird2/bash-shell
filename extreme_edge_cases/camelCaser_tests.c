@@ -131,6 +131,15 @@ int testCombo(char **(*camelCaser)(const char*), void (*destroy)(char **)){
     return result;
 }
 
+int testNoPunc(char **(*camelCaser)(const char*), void(*destroy)(char **)){
+    char* input = " dfk   lajknkb  cvxnlv    ksdnkla ";
+    char* exp[] = {NULL};
+    char** output = camelCaser(input);
+    int result = checkIfMatch(output,exp);
+    destroy(output);
+    return result;
+}
+
 int test_camelCaser(char **(*camelCaser)(const char *),
                     void (*destroy)(char **)) {
 
@@ -172,6 +181,10 @@ int test_camelCaser(char **(*camelCaser)(const char *),
    }
    if(!testCombo(camelCaser, destroy)){
 	//printf("combo input failed\n");
+	return 0;
+   }
+   if(!testNoPunc(camelCaser, destroy)){
+	//printf("test no punc failed\n");
 	return 0;
    }
    return 1;

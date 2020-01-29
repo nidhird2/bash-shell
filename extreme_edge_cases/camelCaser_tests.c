@@ -10,13 +10,11 @@
 #include "camelCaser_tests.h"
 
 int findSize(char** actual){
-    int count = 0;
     int idx = 0;
     while(actual[idx] != NULL){
-	count++;
 	idx++;
     }
-    return count;
+    return idx;
 }
 
 int checkIfMatch(char** actual, char** expected){

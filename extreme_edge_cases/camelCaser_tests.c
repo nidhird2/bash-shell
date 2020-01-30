@@ -95,7 +95,7 @@ int noSpaces(char**(*camelCaser)(const char*), void (*destroy)(char**)){
 }
 
 int whitespace(char**(*camelCaser)(const char*), void(*destroy)(char**)){
-    char* input = "   spaceSpace	 space   !   	 Space   space.		";
+    char* input = "   spaceSpace	 SPACE   !   	 SPACE   sPACE.		";
     char* exp[] = {"spacespaceSpace","spaceSpace",NULL};
     char **output = camelCaser(input);
     int result = checkIfMatch(output, exp);
@@ -148,6 +148,14 @@ int testCaps(char** (*camelCaser)(const char*), void(*destroy)(char**)){
     return result;
 }
 
+int lettersAndNumbers(char **(*camelCaser)(const char*), void(*destroy)(char**)){
+    char* input = "\t4MYlOVE\ni\rNEED\vyOU!\v7VEN\n11VEN\'L8TER\tG8TER\\";
+    char* exp[] = {"4myloveINeedYou", "7ven11ven", "l8terG8ter", NULL};
+    char** output = camelCaser(input);
+    int result = checkIfMatch(output,exp);
+    destroy(output);
+    return result;
+}
 int test_camelCaser(char **(*camelCaser)(const char *),
                     void (*destroy)(char **)) {
 
@@ -197,6 +205,9 @@ int test_camelCaser(char **(*camelCaser)(const char *),
    }
    if(!testCaps(camelCaser, destroy)){
 	//printrf("test caps failed\n");
+	return 0;
+   }
+   if(!lettersAndNumbers(camelCaser,destroy)){
 	return 0;
    }
    return 1;

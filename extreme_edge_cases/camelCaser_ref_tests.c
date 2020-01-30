@@ -13,6 +13,9 @@ int main() {
     // This function prints the reference implementation output on the terminal.
     print_camelCaser(input);
 
+    char* input2 = "\t4MYlOVE\ni\rNEED\vyOU!\v7VEN\n11VEN\'L8TER\tG8TER\v";
+    print_camelCaser(input2);
+
     // Put your expected output for the given input above.
     char *correct[] = {"hello", NULL};
     char *wrong[] = {"hello", "welcomeToCs241", NULL};

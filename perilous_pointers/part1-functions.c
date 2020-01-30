@@ -1,6 +1,7 @@
 /**
  * Perilous Pointers
  * CS 241 - Spring 2020
+ * partner: slj2
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,8 +22,10 @@
  *     The grade to check.
  */
 void one(const char *grade) {
-    if (grade > 70)
-        printf("%f passed!\n", grade);
+    char* pend;
+    float a1 = strtof(grade, &pend);
+    if (a1 > 70.0)
+        printf("%f passed!\n", a1);
     else
         printf("%s not passed!\n", grade);
 }
@@ -33,7 +36,7 @@ void one(const char *grade) {
  */
 void two() {
     int x = 4;
-    int *p = x;
+    int *p = &x;
 
     printf("The value of p is: %d\n", *p);
 }
@@ -50,7 +53,7 @@ void two() {
  *     Second input parameter.
  */
 void three(const int *x, const int *y) {
-    if (x == y)
+    if (*x == *y)
         printf("x and y are equal.\n");
     else
         printf("x and y are different.\n");
@@ -69,7 +72,8 @@ void three(const int *x, const int *y) {
  *     contains the value of the input parameter.
  */
 float *four(const int *x) {
-    float *p = *x;
+    float *p = (float*)malloc(sizeof(float));
+    *p = *x;
     return p;
 }
 
@@ -82,7 +86,7 @@ float *four(const int *x) {
  *
  */
 void five(const char *a) {
-    if (a >= 'A' && a <= 'z')
+    if ((*a >= 'A' && *a <= 'Z') || (*a >= 'a' && *a <= 'z'))
         printf("a is a letter.\n");
     else
         printf("a is not a letter.\n");
@@ -94,16 +98,19 @@ void five(const char *a) {
  * prints the concatenated string.
  */
 void six(const char *str) {
-    char *s = "Hello ";
-    strcat(s, str);
-    printf("%s\n", s);
+    char dest[strlen(str) + 10];
+    char src[strlen(str) + 1];
+    strcpy(dest, "Hello ");
+    strcpy(src, str);
+    strcat(dest, src);
+    printf("%s\n", dest);
 }
 
 /**
  * Creates an array of values containing the values {0.0, 0.1, ..., 0.9}.
  */
 void seven() {
-    float *values;
+    float values[10];
 
     int i, n = 10;
     for (i = 0; i < n; i++)
@@ -118,10 +125,10 @@ void seven() {
  * Creates a 2D array of values and prints out the values on the diagonal.
  */
 void eight(int a) {
-    int **values;
+    int values[10][10];
 
     int i, j;
-    values = malloc(10 * sizeof(int));
+    //values = (int**) malloc(10 * sizeof(int));
     for (i = 0; i < 10; i++)
         for (j = 0; j < 10; j++)
             values[i][j] = i * j * a;
@@ -142,18 +149,17 @@ void eight(int a) {
  *     Input parameter, used to determine which string is printed.
  */
 void nine(const char *s) {
-    switch (s) {
-    case "blue":
+    char* or = "orange";
+    char* blue = "blue";
+
+    if(0 == strcmp(blue, s)) {
         printf("Orange and BLUE!\n");
-        break;
-
-    case "orange":
+    }
+    else if(0 == strcmp(or, s)){
         printf("ORANGE and blue!\n");
-        break;
-
-    default:
+    }
+    else{
         printf("orange and blue!\n");
-        break;
     }
 }
 
@@ -164,7 +170,8 @@ void nine(const char *s) {
  *     The diameter of the circle.
  */
 void ten(const int d) {
-    printf("The radius of the circle is: %f.\n", d / 2);
+    //float temp = (float)d;
+    printf("The radius of the circle is: %f.\n", ((float)d) / 2);
 }
 
 /**
@@ -192,6 +199,8 @@ void ten(const int d) {
  */
 long int clear_bits(long int value, long int flag) {
     // TODO clear_bits
+    long int result = (value ^ flag) & value;
+    return result;
 }
 
 /**
@@ -223,6 +232,14 @@ long int clear_bits(long int value, long int flag) {
 int little_automaton(int (*transition)(int, char), const char *input_string) {
     int state = 0;
     // put something here
-
+    char dup[strlen(input_string) + 1];
+    strcpy(dup, input_string);
+    int count = 0;
+    while((unsigned long)count < strlen(input_string)){
+//         char* a = current;
+	state = transition(state, dup[count]);
+	count++;
+	//dup++;
+    }    
     return state;
 }

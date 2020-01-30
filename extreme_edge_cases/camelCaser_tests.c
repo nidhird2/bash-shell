@@ -48,6 +48,34 @@ int checkNull(char **(*camelCaser)(const char *), void (*destroy)(char**)){
     return result;
 }
 
+int testNoPunc(char **(*camelCaser)(const char*), void(*destroy)(char **)){
+    char* input = " dfk   lajknkb  cvxnlv    ksdnkla ";
+    char* exp[] = {NULL};
+    char** output = camelCaser(input);
+    int result = checkIfMatch(output,exp);
+    destroy(output);
+    return result;
+}
+
+int checkEmpty(char**(*camelCaser)(const char*), void(*destroy)(char**)){
+    char* input = "";
+    char* exp[] = {NULL};
+    char **output = camelCaser(input);
+    int result = checkIfMatch(output, exp);
+    destroy(output);
+    return result;
+}
+
+int checkAllSpaces(char **(*camelCaser)(const char*), void(*destroy)(char**)){
+    char* input = "	   	";
+    char* exp[] = {NULL};
+    char **output = camelCaser(input);
+    int result = checkIfMatch(output, exp);
+    destroy(output);
+    return result;
+}
+
+
 int checkOneSentence(char **(*camelCaser)(const char*), void (*destroy)(char**)){
     char* input = "HELLO WORLD.";
     char* exp[] = {"helloWorld", NULL};
@@ -69,24 +97,6 @@ int noSpaces(char**(*camelCaser)(const char*), void (*destroy)(char**)){
 int whitespace(char**(*camelCaser)(const char*), void(*destroy)(char**)){
     char* input = "   spaceSpace	 space   !   	 Space   space.		";
     char* exp[] = {"spacespaceSpace","spaceSpace",NULL};
-    char **output = camelCaser(input);
-    int result = checkIfMatch(output, exp);
-    destroy(output);
-    return result;
-}
-
-int checkEmpty(char**(*camelCaser)(const char*), void(*destroy)(char**)){
-    char* input = "";
-    char* exp[] = {NULL};
-    char **output = camelCaser(input);
-    int result = checkIfMatch(output, exp);
-    destroy(output);
-    return result;
-}
-
-int checkAllSpaces(char **(*camelCaser)(const char*), void(*destroy)(char**)){
-    char* input = "	   	";
-    char* exp[] = {NULL};
     char **output = camelCaser(input);
     int result = checkIfMatch(output, exp);
     destroy(output);
@@ -124,15 +134,6 @@ int testCombo(char **(*camelCaser)(const char*), void (*destroy)(char **)){
     char* input = "\\ \' \" \t    DE\nAD  \\   AT    41     YEARS  \\";
     char* exp[] = {"","","","deAd","at41Years",NULL};
     char **output = camelCaser(input);
-    int result = checkIfMatch(output,exp);
-    destroy(output);
-    return result;
-}
-
-int testNoPunc(char **(*camelCaser)(const char*), void(*destroy)(char **)){
-    char* input = " dfk   lajknkb  cvxnlv    ksdnkla ";
-    char* exp[] = {NULL};
-    char** output = camelCaser(input);
     int result = checkIfMatch(output,exp);
     destroy(output);
     return result;

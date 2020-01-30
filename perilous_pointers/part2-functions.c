@@ -94,7 +94,7 @@ void tok_step(char *str) {
     if (strcmp(a, "CS241") == 0)
         printf("10: Illinois\n");
     else
-        printf("10: ERROR\n");
+	printf("10: ERROR\n");
 }
 
 void the_end(void *orange, void *blue) {

@@ -63,6 +63,7 @@ char **camel_caser(const char *input_str) {
     char* currentSpace = wordSpace;
     int isPreviousSpace = 1;
     int isFirstWord = 1;
+    int toUp = 0;
     int currentIdx = 0;
     while(*current){
 	//printf("current: %s\n", current);
@@ -72,6 +73,9 @@ char **camel_caser(const char *input_str) {
 	if(isspace(*current)){
 		isPreviousSpace = 1;
 		current++;
+		if(!isFirstWord){
+			toUp = 1;
+		}
 		continue;
 	}
 	else if(ispunct(*current)){
@@ -82,11 +86,13 @@ char **camel_caser(const char *input_str) {
 		wordSpace = currentSpace;
 		isFirstWord = 1;
 		isPreviousSpace = 1;
+		toUp = 0;
 		current++;
 	}
 	else{
-		if(isPreviousSpace && (!isFirstWord)){
+		if(toUp && isalpha(*current)){
 			*currentSpace = (char)toupper(*current);
+			toUp = 0;
 		}
 		else{
 			*currentSpace = (char)tolower(*current);

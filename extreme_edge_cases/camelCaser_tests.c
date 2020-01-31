@@ -150,7 +150,7 @@ int testCaps(char** (*camelCaser)(const char*), void(*destroy)(char**)){
 
 int lettersAndNumbers(char **(*camelCaser)(const char*), void(*destroy)(char**)){
     char* input = "\t4MYlOVE\ni\rNEED\vyOU!\v7VEN\n11VEN\'L8TER\tG8TER\\";
-    char* exp[] = {"4myloveINeedYou", "7ven11ven", "l8terG8ter", NULL};
+    char* exp[] = {"4myloveINeedYou","7ven11Ven","l8terG8ter",NULL};
     char** output = camelCaser(input);
     int result = checkIfMatch(output,exp);
     destroy(output);

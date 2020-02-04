@@ -242,6 +242,9 @@ void vector_insert(vector *this, size_t position, void *element) {
         vector_push_back(this, element);
         return;
     }
+    if(this->size == this->capacity){
+        vector_reserve(this, this->size + 1);
+    }
     void* current = this->copy_constructor(element);
     for(size_t i = position; i <= this->size; i++){
         void* temp = this->array[i];
@@ -254,7 +257,7 @@ void vector_insert(vector *this, size_t position, void *element) {
 void vector_erase(vector *this, size_t position) {
     assert(this);
     assert(position < this->size);
-    if(position == (this->size - 1)){
+    if(position == (this->size)){
         return vector_pop_back(this);
     }
     this->destructor(this->array[position]);

@@ -179,27 +179,46 @@ int test_vector_insert(){
     return 1;
 }
 
+int test_many_insert(){
+    vector* tester = int_vector_create();
+    for(int i = 0; i < 10; i++){
+        vector_insert(tester, i, &i);
+    }
+    print_vector(tester);
+    for(int i = 100; i < 109; i++){
+        vector_insert(tester, 4, &i);
+        print_vector(tester);
+    }
+    vector_destroy(tester);
+    return 1;
+}
+
 int main(int argc, char *argv[]) {
-    if(!test_vector_set()){
-        printf("vector set test failed\n");
-        return 0;
-    } else if(!test_vector_pop_back()){
-        printf("vector pop back test failed\n");
-        return 0;
-    }
-    if(!test_vector_resize()){
-        printf("vector resize test failed\n");
-        return 0;
-    }
-     if(!test_vector_reserve()){
-        printf("vector reserve test failed\n");
-        return 0;
-    }
-    else if(!test_vector_erase()){
-        printf("vector erase test failed\n");
-        return 0;
-    } else if(!test_vector_insert()){
+    // if(!test_vector_set()){
+    //     printf("vector set test failed\n");
+    //     return 0;
+    // } else if(!test_vector_pop_back()){
+    //     printf("vector pop back test failed\n");
+    //     return 0;
+    // }
+    // if(!test_vector_resize()){
+    //     printf("vector resize test failed\n");
+    //     return 0;
+    // }
+    //  if(!test_vector_reserve()){
+    //     printf("vector reserve test failed\n");
+    //     return 0;
+    // }
+    // else if(!test_vector_erase()){
+    //     printf("vector erase test failed\n");
+    //     return 0;
+    //} 
+    if(!test_vector_insert()){
         printf("vector insert test failed\n");
+        return 0;
+    }
+    if(!test_many_insert()){
+        printf("test insert many failed\n");
         return 0;
     }
     printf("SUCCESS\n");

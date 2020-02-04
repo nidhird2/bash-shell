@@ -12,6 +12,8 @@
 #include <assert.h>
 #include <string.h>
 
+int findTarget(const char*, size_t, size_t, const char*);
+
 struct sstring {
     vector* v;
 };
@@ -89,10 +91,55 @@ vector *sstring_split(sstring *this, char delimiter) {
 int sstring_substitute(sstring *this, size_t offset, char *target,
                        char *substitution) {
     // your code goes here
+    size_t temp_size = vector_size(this->v);
+    assert(offset < temp_size);
+    assert(offset >= 0);
     char* temp = sstring_to_cstr(this);
-
+    int res = findTarget(temp, temp_size, offset, target);
+    if(res == -1){
+        free(temp);
+        return -1;
+    }
+    int target_len =strlen(target);
+    int sub_len =strlen(substitution);
+    vector_clear(this->v);
+    for(int i = 0; i < res; i++){
+        vector_push_back(this->v, &temp[i]);
+    }
+    for(int i = 0; i < sub_len; i++){
+        vector_push_back(this->v, &substitution[i]);
+    }
+    for(int i = res + target_len; i < (int)temp_size; i++){
+        vector_push_back(this->v, &temp[i]);
+    }
     free(temp);
-    return -1;
+    return 0;
+}
+int findTarget(const char* og, size_t og_length, size_t offset, const char*target){
+    const char* current = og;
+    const char* current2 = target;
+        for(size_t i = offset; i < og_length; i++){
+            //printf("i: %lu\n", i);
+            current = og + i;
+            current2 = target;
+            while(*current == *current2){
+                //printf("current: %c current2: %c\n", *current, *current2);
+                current++;
+                current2++;
+                if(*current2 == '\0' || *current == '\0'){
+                    break;
+                }
+            }
+        if(*current2 == '\0'){
+            //printf("current2 is null, i: %lu\n", i);
+            return i;
+        }
+        if(*current == '\0'){
+            //printf("current is null, i: %lu\n", i);
+            return -1;
+        }
+    }
+    return -1; 
 }
 
 char *sstring_slice(sstring *this, int start, int end) {
@@ -101,7 +148,7 @@ char *sstring_slice(sstring *this, int start, int end) {
     assert(end>=start);
     size_t len = (end-start) + 1;
     char* result = (char*)malloc(sizeof(char) * len);
-    for(size_t i = start; i < end; i++){
+    for(int i = start; i < end; i++){
         result[i-start] = *(char*)vector_get(this->v, i);
     }
     result[len-1] = '\0';

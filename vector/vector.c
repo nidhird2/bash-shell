@@ -4,6 +4,7 @@
  */
 #include "vector.h"
 #include <assert.h>
+#include <stdio.h>
 
 /**
  * 'INITIAL_CAPACITY' the initial size of the dynamically.
@@ -140,8 +141,10 @@ void vector_resize(vector *this, size_t n) {
     }
     else{
         while(this->size != n){
-            void* m = this->default_constructor();
-            vector_push_back(this, m);
+            //void* m = this->default_constructor();
+            void* temp = this->default_constructor();
+            vector_push_back(this, temp);
+            free(temp);
         }
         return; 
     }
@@ -191,6 +194,7 @@ void vector_set(vector *this, size_t position, void *element) {
 
 void *vector_get(vector *this, size_t position) {
     assert(this);
+    //printf("size: %lu, position: %lu\n", this->size, position);
     assert(position < this->size);
     return this->array[position];
 }
@@ -233,11 +237,10 @@ void vector_insert(vector *this, size_t position, void *element) {
     if(position > this->size){
         return;
     }
-    if(this->size == this->capacity){
-        vector_reserve(this, this->size + 1);
-    }
-    if(this->size == position){
+    //printf("size: %lu position: %lu\n", this->size, position);
+    if(this->size == (position)){
         vector_push_back(this, element);
+        return;
     }
     void* current = this->copy_constructor(element);
     for(size_t i = position; i <= this->size; i++){

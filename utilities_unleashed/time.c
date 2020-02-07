@@ -4,7 +4,6 @@
  * looked at code from http://www.cs.tufts.edu/comp/111/examples/Time/clock_gettime.c
  */
 #include <time.h>
-//#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include "format.h"

@@ -35,6 +35,9 @@ int main(int argc, char *argv[]) {
         }
         for(int i = 0; i < loc; i++){
             char * tok = strtok(argv[i], "=");
+            if(tok == NULL){
+                continue;
+            }
             unsetenv(tok);
         }
         exit(0);
@@ -47,7 +50,6 @@ int main(int argc, char *argv[]) {
             char* envToFind = tok2 + 1;
             char* found = getenv(envToFind);
             if(found == NULL){
-                print_env_usage();
                 print_env_usage();
                 exit(23);
             }

@@ -33,6 +33,7 @@ void handle_external_command(char*);
 void handle_args(int, char*[]);
 void load_history();
 void load_script();
+void save_history();
 
 int shell(int argc, char *argv[]) {
     // TODO: This is the entry point for your shell.
@@ -203,6 +204,7 @@ void caught_sigint(){
 }
 
 void cleanup_and_exit(void){
+    save_history();
     vector_destroy(history);
     free(script_filename);
     free(history_filename);
@@ -236,9 +238,7 @@ void load_script(){
 }
 
 void load_history(){
-    printf("HERE\n");
     if(history_filename == NULL){
-        printf("YIKES\n");
         return;
     }
     FILE* f = fopen(history_filename, "r");
@@ -259,4 +259,22 @@ void load_history(){
     }
     free(line);
     fclose(f);
+}
+
+void save_history(){
+    if(history_filename == NULL){
+        return;
+    }
+    FILE* f = fopen(history_filename, "w");
+    size_t max_size = vector_size(history);
+    for(size_t i = 0; i < max_size; i++){
+        char* current = (char*)vector_get(history, i);
+        printf("CURRENT: %s\n", current);
+        fwrite(current , 1 , sizeof(current) , f);
+        if(i != (max_size - 1)){
+            fwrite("\n" , 1 , 1 , f);
+        }
+    }
+    fclose(f);
+    return;
 }

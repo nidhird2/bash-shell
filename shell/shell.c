@@ -10,7 +10,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <signal.h> 
-#include <stdbool.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 typedef struct process {
     char *command;
@@ -34,6 +35,7 @@ void handle_args(int, char*[]);
 void load_history();
 void load_script();
 void save_history();
+void exec_external(char*, char**);
 
 int shell(int argc, char *argv[]) {
     // TODO: This is the entry point for your shell.
@@ -47,27 +49,6 @@ int shell(int argc, char *argv[]) {
         input_loop();
     }
     return 0;
-}
-
-void handle_args(int argc, char*argv[]){
-    opterr = 0;
-    char* options = "f:h:";
-    int opt = getopt(argc, argv, options);
-    while(opt != -1){
-        if(opt == 'f'){
-            script_filename = get_full_path(optarg);
-
-        }
-        else if(opt == 'h'){
-            history_filename = get_full_path(optarg);
-        }
-        else{
-            print_usage();
-            cleanup_and_exit();
-        }
-        opt = getopt(argc, argv, options);
-    }
-    return;
 }
 
 void input_loop(){
@@ -92,7 +73,6 @@ void input_loop(){
 }
 
 void handle_input(char* input){
-    //printf("\n.%s.\n", input);
     int len = strlen(input);
     if(len == 0){
         free(input);
@@ -140,8 +120,54 @@ void handle_input(char* input){
     return;
 }
 void handle_external_command(char* input){
-    //fflush(STDOUT_FILENO);
+    char* input_copy = malloc(strlen(input) + 1);
+    strcpy(input_copy, input);
+    char* token = strtok(input, " ");
+    size_t i = 1;
+    char** args = malloc(i * sizeof(char*));
+    while(token != NULL){
+        char* copy = malloc(strlen(token) + 1);
+        strcpy(copy, token);
+        args[i - 1] = copy;
+        i++;
+        args = realloc(args, i * sizeof(char*));
+        token = strtok(NULL, " ");
+    }
+    args[i - 1] = NULL;
+    // for(size_t j = 0; j < i; j++){
+    //     printf("%lu: %s\n", j, args[j]);
+    // }
+    fflush(stdout);
+    exec_external(input_copy, args);
+    for(size_t j = 0; j < i; j++){
+        free(args[j]);
+    }
+    free(args);
+    free(input_copy);
     return;
+}
+
+void exec_external(char* command, char** args){
+    pid_t f = fork();
+    if(f == -1){
+        print_fork_failed();
+        return;
+    }
+    //must be child process
+    else if(f == 0){
+        print_command_executed(getpid());
+        execvp(args[0], args);
+        print_exec_failed(command);
+        exit(1);
+    }
+    int status;
+    int res = waitpid(f, &status, 0);
+    if(res == -1){
+        print_wait_failed();
+    }
+    else{
+        vector_push_back(history,command);
+    }
 }
 
 int do_cd(char* s){
@@ -162,11 +188,7 @@ void history_match(char* prefix){
 
     for(size_t i = his_size; i --> 0 ;){
         char* his = (char*)vector_get(history, i);
-        //printf("i: %lu\n", i);
-        //printf("his: %s\n", his);
-        //printf("prefix: %s\n", prefix + 1);
         if(strstr(his, prefix+1) != NULL) {
-            //printf("HERE\n");
             char* match = his;
             char* copy = malloc(strlen(match) + 1);
             strcpy(copy, match);
@@ -211,6 +233,27 @@ void cleanup_and_exit(void){
     exit(0);
 }
 
+void handle_args(int argc, char*argv[]){
+    opterr = 0;
+    char* options = "f:h:";
+    int opt = getopt(argc, argv, options);
+    while(opt != -1){
+        if(opt == 'f'){
+            script_filename = get_full_path(optarg);
+
+        }
+        else if(opt == 'h'){
+            history_filename = get_full_path(optarg);
+        }
+        else{
+            print_usage();
+            cleanup_and_exit();
+        }
+        opt = getopt(argc, argv, options);
+    }
+    return;
+}
+
 void load_script(){
     if(script_filename == NULL){
         return;
@@ -243,8 +286,7 @@ void load_history(){
     }
     FILE* f = fopen(history_filename, "r");
     if(f == NULL){
-        print_history_file_error();
-        cleanup_and_exit();
+        return;
     }
     char * line = NULL;
     size_t len = 0;
@@ -269,7 +311,6 @@ void save_history(){
     size_t max_size = vector_size(history);
     for(size_t i = 0; i < max_size; i++){
         char* current = (char*)vector_get(history, i);
-        printf("CURRENT: %s\n", current);
         fwrite(current , 1 , sizeof(current) , f);
         if(i != (max_size - 1)){
             fwrite("\n" , 1 , 1 , f);

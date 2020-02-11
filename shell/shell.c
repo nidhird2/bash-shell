@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <signal.h> 
+#include <stdbool.h>
 
 typedef struct process {
     char *command;
@@ -17,22 +18,55 @@ typedef struct process {
 } process;
 
 static vector* history;
+static char* history_filename = NULL;
+static char* script_filename = NULL;
 
 void input_loop(void);
 void handle_input(char*);
-void do_cd(char*);
+int do_cd(char*);
 void cleanup_and_exit(void);
 void print_history(void);
 void print_history_idx(size_t);
 void caught_sigint();
 void history_match(char*);
+void handle_external_command(char*);
+void handle_args(int, char*[]);
+void load_history();
+void load_script();
 
 int shell(int argc, char *argv[]) {
     // TODO: This is the entry point for your shell.
     signal(SIGINT, caught_sigint); 
     history = string_vector_create();
-    input_loop();
+    handle_args(argc, argv);
+    load_history();
+    if(script_filename){
+        load_script();
+    } else{
+        input_loop();
+    }
     return 0;
+}
+
+void handle_args(int argc, char*argv[]){
+    opterr = 0;
+    char* options = "f:h:";
+    int opt = getopt(argc, argv, options);
+    while(opt != -1){
+        if(opt == 'f'){
+            script_filename = get_full_path(optarg);
+
+        }
+        else if(opt == 'h'){
+            history_filename = get_full_path(optarg);
+        }
+        else{
+            print_usage();
+            cleanup_and_exit();
+        }
+        opt = getopt(argc, argv, options);
+    }
+    return;
 }
 
 void input_loop(){
@@ -57,17 +91,18 @@ void input_loop(){
 }
 
 void handle_input(char* input){
-    //printf("%s\n", input);
+    //printf("\n.%s.\n", input);
     int len = strlen(input);
     if(len == 0){
         free(input);
+        input = NULL;
         return;
     }
     if(input[len - 1] == '\n'){
         input[len - 1] = '\0';
     }
     //handle first char in input is EOF
-    if(input[0] == EOF){
+    if(input[0] == EOF || input[len - 1] == EOF){
         free(input);
         return cleanup_and_exit();
     }
@@ -95,20 +130,30 @@ void handle_input(char* input){
     else if(copy[0] == '!'){
         history_match(copy);
     }
+    else{
+        handle_external_command(copy);
+    }
     free(input);
+    input = NULL;
     free(copy);
     return;
 }
+void handle_external_command(char* input){
+    //fflush(STDOUT_FILENO);
+    return;
+}
 
-void do_cd(char* s){
+int do_cd(char* s){
     if(s == NULL){
         print_no_directory("");
+        return 1;
     }
     int res = chdir(s);
     if(res == -1){
         print_no_directory(s);
+        return 1;
     }
-    return;
+    return 0;
 }
 
 void history_match(char* prefix){
@@ -159,5 +204,59 @@ void caught_sigint(){
 
 void cleanup_and_exit(void){
     vector_destroy(history);
-    exit(1);
+    free(script_filename);
+    free(history_filename);
+    exit(0);
+}
+
+void load_script(){
+    if(script_filename == NULL){
+        return;
+    }
+    FILE* f = fopen(script_filename, "r");
+    if(f == NULL){
+        print_script_file_error();
+        cleanup_and_exit();
+    }
+    char * line = NULL;
+    size_t len = 0;
+    int read = getline(&line, &len, f);
+
+    while (read != -1) {
+        if(line[read - 1] == '\n'){
+            line[read - 1] = '\0';
+        }
+        handle_input(line);
+        len = 0;
+        read = getline(&line, &len, f);
+    }
+    free(line);
+    fclose(f);
+    cleanup_and_exit();
+}
+
+void load_history(){
+    printf("HERE\n");
+    if(history_filename == NULL){
+        printf("YIKES\n");
+        return;
+    }
+    FILE* f = fopen(history_filename, "r");
+    if(f == NULL){
+        print_history_file_error();
+        cleanup_and_exit();
+    }
+    char * line = NULL;
+    size_t len = 0;
+    int read = getline(&line, &len, f);
+
+    while (read != -1) {
+        if(line[read - 1] == '\n'){
+            line[read - 1] = '\0';
+        }
+        vector_push_back(history, line);
+        read = getline(&line, &len, f);
+    }
+    free(line);
+    fclose(f);
 }

@@ -22,6 +22,7 @@ typedef struct process {
 static vector* history;
 static char* history_filename = NULL;
 static char* script_filename = NULL;
+static pid_t foreground;
 
 void input_loop(void);
 int handle_input(char*);
@@ -259,7 +260,7 @@ void print_history_idx(size_t idx){
 }
 
 void caught_sigint(){
-    cleanup_and_exit();
+    kill(foreground, SIGKILL);
 }
 
 int check_and_op(char* command){
@@ -394,13 +395,19 @@ void load_script(){
     size_t len = 0;
     int read = getline(&line, &len, f);
 
+    pid_t my_pid = getpid();
+
     while (read != -1) {
+        char* cur_dir = get_current_dir_name();
+        print_prompt(cur_dir,my_pid);
+        printf("%s", line);
         if(line[read - 1] == '\n'){
             line[read - 1] = '\0';
         }
         handle_input(line);
         len = 0;
         read = getline(&line, &len, f);
+        free(cur_dir);
     }
     free(line);
     fclose(f);

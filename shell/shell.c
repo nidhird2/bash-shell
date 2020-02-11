@@ -5,6 +5,7 @@
 #include "format.h"
 #include "shell.h"
 #include "vector.h"
+#include "sstring.h"
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -24,7 +25,7 @@ static char* script_filename = NULL;
 
 void input_loop(void);
 int handle_input(char*);
-int do_cd(char*, char*);
+int do_cd(char*);
 void cleanup_and_exit(void);
 void print_history(void);
 void print_history_idx(size_t);
@@ -35,6 +36,9 @@ void handle_args(int, char*[]);
 void load_history();
 void load_script();
 void save_history();
+int check_and_op(char*);
+int check_or_op(char*);
+int check_semi_op(char*);
 int exec_external(char*, char**);
 
 int shell(int argc, char *argv[]) {
@@ -97,27 +101,54 @@ int handle_input(char* input){
         free(copy);
         cleanup_and_exit();
         return result;
-    } 
-    else if(strcmp(token, "cd") == 0){
-        token = strtok(NULL, " ");
-        result = do_cd(copy, token);
     }
     else if(strcmp(token, "!history") == 0){
         print_history();
+        free(input);
+        free(copy);
+        return result;
     } 
     else if(copy[0] == '#'){
         size_t idx;
         sscanf(copy, "#%lu", &idx);
         print_history_idx(idx);
+        free(input);
+        free(copy);
+        return result;
     }
     else if(copy[0] == '!'){
         history_match(copy + 1);
+        free(input);
+        free(copy);
+        return result;
+    }
+
+    //all of these commands must be saved in history
+    vector_push_back(history, copy);
+    if(check_and_op(copy) == 0){
+        free(input);
+        free(copy);
+        return result;
+    }
+    else if(check_or_op(copy) == 0){
+        free(input);
+        free(copy);
+        return result;
+    }
+    else if(check_semi_op(copy) == 0){
+        free(input);
+        free(copy);
+        return result;
+    }  
+    if(strcmp(token, "cd") == 0){
+        token = strtok(NULL, " ");
+        result = do_cd(token);
     }
     else{
         result = handle_external_command(copy);
     }
     free(input);
-    input = NULL;
+    //input = NULL;
     free(copy);
     return result;
 }
@@ -157,6 +188,7 @@ int exec_external(char* command, char** args){
         print_command_executed(getpid());
         execvp(args[0], args);
         print_exec_failed(command);
+        print_invalid_command(command);
         exit(1);
     }
     int status;
@@ -169,12 +201,11 @@ int exec_external(char* command, char** args){
         return 1;
     }
     else{
-        vector_push_back(history,command);
         return 0;
     }
 }
 
-int do_cd(char* command, char* dir){
+int do_cd(char* dir){
     if(dir == NULL){
         print_no_directory("");
         return 1;
@@ -184,7 +215,6 @@ int do_cd(char* command, char* dir){
         print_no_directory(dir);
         return 1;
     }
-    vector_push_back(history, command);
     return 0;
 }
 
@@ -232,7 +262,77 @@ void caught_sigint(){
     cleanup_and_exit();
 }
 
+int check_and_op(char* command){
+    sstring* res = cstr_to_sstring(command);
+    vector* splits = sstring_split(res, '&');
+    if(vector_size(splits) != 3){
+       sstring_destroy(res);
+       vector_destroy(splits);
+       return 1;
+    }
+    char* command1 = (char*)malloc(strlen(vector_get(splits, 0)) + 1);
+    char* command2 = (char*)malloc(strlen(vector_get(splits, 2)) + 1);
+    strcpy(command1, vector_get(splits, 0));
+    strcpy(command2, vector_get(splits, 2));
+    //if first command succeeds, do second
+    if(handle_input(command1) == 0){
+        handle_input(command2);
+        vector_pop_back(history);
+    }
+    sstring_destroy(res);
+    vector_destroy(splits);
+    vector_pop_back(history);
+    return 0;
+}
+
+int check_or_op(char* command){
+    sstring* res = cstr_to_sstring(command);
+    vector* splits = sstring_split(res, '|');
+    if(vector_size(splits) != 3){
+       sstring_destroy(res);
+       vector_destroy(splits);
+       return 1;
+    }
+    char* command1 = (char*)malloc(strlen(vector_get(splits, 0)) + 1);
+    char* command2 = (char*)malloc(strlen(vector_get(splits, 2)) + 1);
+    strcpy(command1, vector_get(splits, 0));
+    strcpy(command2, vector_get(splits, 2));
+
+    //if first command fails, do second
+    if(handle_input(command1) == 1){
+        handle_input(command2);
+        vector_pop_back(history);
+    }
+    sstring_destroy(res);
+    vector_destroy(splits);
+    vector_pop_back(history);
+    return 0;
+}
+int check_semi_op(char* command){
+    sstring* res = cstr_to_sstring(command);
+    vector* splits = sstring_split(res, ';');
+    if(vector_size(splits) != 2){
+       sstring_destroy(res);
+        vector_destroy(splits);
+        return 1;
+    }
+    char* command1 = (char*)malloc(strlen(vector_get(splits, 0)) + 1);
+    char* command2 = (char*)malloc(strlen(vector_get(splits, 1)) + 1);
+    strcpy(command1, vector_get(splits, 0));
+    strcpy(command2, vector_get(splits, 1));
+
+    //if first command fails, do second
+    handle_input(command1);
+    handle_input(command2);
+    sstring_destroy(res);
+    vector_destroy(splits);
+    vector_pop_back(history);
+    vector_pop_back(history);
+    return 0;
+}
+
 void cleanup_and_exit(void){
+    fflush(stdout);
     save_history();
     vector_destroy(history);
     free(script_filename);

@@ -23,19 +23,19 @@ static char* history_filename = NULL;
 static char* script_filename = NULL;
 
 void input_loop(void);
-void handle_input(char*);
-int do_cd(char*);
+int handle_input(char*);
+int do_cd(char*, char*);
 void cleanup_and_exit(void);
 void print_history(void);
 void print_history_idx(size_t);
 void caught_sigint();
 void history_match(char*);
-void handle_external_command(char*);
+int handle_external_command(char*);
 void handle_args(int, char*[]);
 void load_history();
 void load_script();
 void save_history();
-void exec_external(char*, char**);
+int exec_external(char*, char**);
 
 int shell(int argc, char *argv[]) {
     // TODO: This is the entry point for your shell.
@@ -72,12 +72,13 @@ void input_loop(){
     return;
 }
 
-void handle_input(char* input){
+int handle_input(char* input){
+    int result = 0;
     int len = strlen(input);
     if(len == 0){
         free(input);
         input = NULL;
-        return;
+        return result;
     }
     if(input[len - 1] == '\n'){
         input[len - 1] = '\0';
@@ -85,7 +86,8 @@ void handle_input(char* input){
     //handle first char in input is EOF
     if(input[0] == EOF || input[len - 1] == EOF){
         free(input);
-        return cleanup_and_exit();
+        cleanup_and_exit();
+        return result;
     }
     char* copy = (char*)malloc(len + 1);
     strcpy(copy, input);
@@ -93,12 +95,12 @@ void handle_input(char* input){
     if(strcmp(token, "exit") == 0){
         free(input);
         free(copy);
-        return cleanup_and_exit();
+        cleanup_and_exit();
+        return result;
     } 
     else if(strcmp(token, "cd") == 0){
         token = strtok(NULL, " ");
-        do_cd(token);
-        vector_push_back(history, copy);
+        result = do_cd(copy, token);
     }
     else if(strcmp(token, "!history") == 0){
         print_history();
@@ -109,17 +111,17 @@ void handle_input(char* input){
         print_history_idx(idx);
     }
     else if(copy[0] == '!'){
-        history_match(copy);
+        history_match(copy + 1);
     }
     else{
-        handle_external_command(copy);
+        result = handle_external_command(copy);
     }
     free(input);
     input = NULL;
     free(copy);
-    return;
+    return result;
 }
-void handle_external_command(char* input){
+int handle_external_command(char* input){
     char* input_copy = malloc(strlen(input) + 1);
     strcpy(input_copy, input);
     char* token = strtok(input, " ");
@@ -134,24 +136,21 @@ void handle_external_command(char* input){
         token = strtok(NULL, " ");
     }
     args[i - 1] = NULL;
-    // for(size_t j = 0; j < i; j++){
-    //     printf("%lu: %s\n", j, args[j]);
-    // }
     fflush(stdout);
-    exec_external(input_copy, args);
+    int res = exec_external(input_copy, args);
     for(size_t j = 0; j < i; j++){
         free(args[j]);
     }
     free(args);
     free(input_copy);
-    return;
+    return res;
 }
 
-void exec_external(char* command, char** args){
+int exec_external(char* command, char** args){
     pid_t f = fork();
     if(f == -1){
         print_fork_failed();
-        return;
+        return 1;
     }
     //must be child process
     else if(f == 0){
@@ -165,30 +164,37 @@ void exec_external(char* command, char** args){
     if(res == -1){
         print_wait_failed();
     }
+    int exit_status = WEXITSTATUS(status);
+    if(exit_status != 0){
+        return 1;
+    }
     else{
         vector_push_back(history,command);
+        return 0;
     }
 }
 
-int do_cd(char* s){
-    if(s == NULL){
+int do_cd(char* command, char* dir){
+    if(dir == NULL){
         print_no_directory("");
         return 1;
     }
-    int res = chdir(s);
+    int res = chdir(dir);
     if(res == -1){
-        print_no_directory(s);
+        print_no_directory(dir);
         return 1;
     }
+    vector_push_back(history, command);
     return 0;
 }
 
 void history_match(char* prefix){
     size_t his_size = vector_size(history);
+    size_t prefix_len = strlen(prefix);
 
     for(size_t i = his_size; i --> 0 ;){
         char* his = (char*)vector_get(history, i);
-        if(strstr(his, prefix+1) != NULL) {
+        if(strncmp(prefix, his, prefix_len) == 0) {
             char* match = his;
             char* copy = malloc(strlen(match) + 1);
             strcpy(copy, match);
@@ -216,6 +222,7 @@ void print_history_idx(size_t idx){
         char* match = (char*)vector_get(history, idx);
         char* copy = malloc(strlen(match) + 1);
         strcpy(copy, match);
+        printf("copy: %s\n", copy);
         handle_input(copy);
     }
     return;
@@ -251,7 +258,27 @@ void handle_args(int argc, char*argv[]){
         }
         opt = getopt(argc, argv, options);
     }
-    return;
+    if(script_filename && history_filename){
+        if(argc != 5){
+            print_usage();
+            cleanup_and_exit();
+        }
+        return;
+    }
+    else if(script_filename || history_filename){ 
+        if(argc != 3){
+            print_usage();
+            cleanup_and_exit();
+        }
+        return;
+    }
+    else{
+        if(argc != 1){
+            print_usage();
+            cleanup_and_exit();
+        }
+        return;
+    }
 }
 
 void load_script(){
@@ -307,14 +334,16 @@ void save_history(){
     if(history_filename == NULL){
         return;
     }
-    FILE* f = fopen(history_filename, "w");
+    FILE* f = fopen(history_filename, "w+");
     size_t max_size = vector_size(history);
     for(size_t i = 0; i < max_size; i++){
         char* current = (char*)vector_get(history, i);
-        fwrite(current , 1 , sizeof(current) , f);
+        //printf("current: %s\n", current);
+        fwrite(current , 1 , strlen(current) , f);
         if(i != (max_size - 1)){
             fwrite("\n" , 1 , 1 , f);
         }
+       // fwrite("***", 1, 3, f);
     }
     fclose(f);
     return;

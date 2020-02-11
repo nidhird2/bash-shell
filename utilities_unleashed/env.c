@@ -1,6 +1,7 @@
 /**
  * Utilities Unleashed
  * CS 241 - Spring 2020
+ * partner: slj2
  */
 #include "format.h"
 #include <sys/types.h>

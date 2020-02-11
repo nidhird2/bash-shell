@@ -2,6 +2,7 @@
  * Utilities Unleashed
  * CS 241 - Spring 2020
  * looked at code from http://www.cs.tufts.edu/comp/111/examples/Time/clock_gettime.c
+ *partner: slj2
  */
 #include <time.h>
 #include <stdlib.h>

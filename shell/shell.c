@@ -192,11 +192,13 @@ int exec_external(char* command, char** args){
         print_invalid_command(command);
         exit(1);
     }
+    foreground = f;
     int status;
     int res = waitpid(f, &status, 0);
     if(res == -1){
         print_wait_failed();
     }
+    foreground = 0;
     int exit_status = WEXITSTATUS(status);
     if(exit_status != 0){
         return 1;
@@ -261,6 +263,7 @@ void print_history_idx(size_t idx){
 
 void caught_sigint(){
     kill(foreground, SIGKILL);
+    input_loop();
 }
 
 int check_and_op(char* command){

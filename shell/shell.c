@@ -23,6 +23,7 @@ static vector* history;
 static char* history_filename = NULL;
 static char* script_filename = NULL;
 static pid_t foreground;
+static vector* processes;
 
 void input_loop(void);
 int handle_input(char*);
@@ -41,11 +42,17 @@ int check_and_op(char*);
 int check_or_op(char*);
 int check_semi_op(char*);
 int exec_external(char*, char**);
+int send_kill(char*, int);
+int send_stop(char*, int);
+int send_cont(char*, int);
+process* find_process_pid(int);
+
 
 int shell(int argc, char *argv[]) {
     // TODO: This is the entry point for your shell.
     signal(SIGINT, caught_sigint); 
     history = string_vector_create();
+    processes = shallow_vector_create();
     handle_args(argc, argv);
     load_history();
     if(script_filename){
@@ -141,9 +148,34 @@ int handle_input(char* input){
         free(copy);
         return result;
     }  
-    if(strcmp(token, "cd") == 0){
+    else if(strcmp(token, "cd") == 0){
         token = strtok(NULL, " ");
         result = do_cd(token);
+    }
+    else if(strcmp(token, "kill") == 0){
+        token = strtok(NULL, " ");
+        int pid = 0;
+        if(token){
+            sscanf(token, "%d", &pid);
+        }
+
+        result = send_kill(copy, pid);
+    }
+    else if(strcmp(token, "stop") == 0){
+        token = strtok(NULL, " ");
+        int pid = 0;
+        if(token){
+            sscanf(token, "%d", &pid);
+        }
+        result = send_stop(copy, pid);
+    }
+    else if(strcmp(token, "cont") == 0){
+        token = strtok(NULL, " ");
+        int pid = 0;
+        if(token){
+            sscanf(token, "%d", &pid);
+        }
+        result = send_cont(copy, pid);
     }
     else{
         result = handle_external_command(copy);
@@ -262,8 +294,11 @@ void print_history_idx(size_t idx){
 }
 
 void caught_sigint(){
-    kill(foreground, SIGKILL);
-    input_loop();
+    //printf("pid_t foreground: %d\n", foreground);
+    if(foreground != 0){
+        kill(foreground, SIGKILL);
+    }
+    //input_loop();
 }
 
 int check_and_op(char* command){
@@ -457,4 +492,61 @@ void save_history(){
     }
     fclose(f);
     return;
+}
+
+int send_kill(char* command, int pid){
+    if(pid == 0){
+        print_invalid_command(command);
+        return 1;
+    }
+    process* found = find_process_pid(pid);
+    if(found == NULL){
+        print_no_process_found(pid);
+        return 1;
+    }
+    kill(pid, SIGTERM);
+    print_killed_process(pid, found->command);
+    return 0; 
+}
+
+int send_stop(char* command, pid_t pid){
+    if(pid == 0){
+        print_invalid_command(command);
+        return 1;
+    }
+    process* found = find_process_pid(pid);
+    if(found == NULL){
+        print_no_process_found(pid);
+        return 1;
+    }
+
+    kill(pid, SIGTSTP);
+    print_stopped_process(pid, found->command);
+    return 0;
+}
+
+int send_cont(char* command, pid_t pid){
+    if(pid == 0){
+        print_invalid_command(command);
+        return 1;
+    }
+    process* found = find_process_pid(pid);
+    if(found == NULL){
+        print_no_process_found(pid);
+        return 1;
+    }
+    kill(pid, SIGCONT);
+    print_continued_process(pid, found->command);
+    return 1;
+}
+
+process* find_process_pid(int input_pid){
+    size_t pro_size = vector_size(processes);
+    for(size_t i = 0; i < pro_size; i++){
+        process* current = (process*)vector_get(processes, i);
+        if(current ->pid == input_pid){
+            return current;
+        }
+    }
+    return NULL;
 }

@@ -13,6 +13,7 @@
 #include <signal.h> 
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 
 typedef struct process {
     char *command;
@@ -25,10 +26,15 @@ static char* script_filename = NULL;
 static pid_t foreground;
 static vector* processes;
 
+char* calc_time_str(unsigned long, unsigned long);
+char* calc_start_time(unsigned long long);
+process_info* get_info(int);
+void ps();
 void input_loop(void);
+void reap_children();
 int handle_input(char*);
 int do_cd(char*);
-void cleanup_and_exit(void);
+void cleanup(void);
 void print_history(void);
 void print_history_idx(size_t);
 void caught_sigint();
@@ -46,13 +52,21 @@ int send_kill(char*, int);
 int send_stop(char*, int);
 int send_cont(char*, int);
 process* find_process_pid(int);
+char** getargs(char* input);
+int exec_background(char*, char**);
+int handle_background_command(char*);
+process* create_process(char*, pid_t);
+void destroy_process(process*);
+void read_children();
+void kill_and_clean_children();
+
 
 
 int shell(int argc, char *argv[]) {
     // TODO: This is the entry point for your shell.
     signal(SIGINT, caught_sigint); 
     history = string_vector_create();
-    processes = shallow_vector_create();
+    processes = vector_create(NULL, NULL, NULL);
     handle_args(argc, argv);
     load_history();
     if(script_filename){
@@ -74,7 +88,8 @@ void input_loop(){
         int read = getline(&s, &n, stdin);
         if(read == -1){
             free(s);
-            cleanup_and_exit();
+            cleanup();
+            exit(0);
         }
         char* copy = (char*)malloc(strlen(s) + 1);
         strcpy(copy, s);
@@ -98,7 +113,8 @@ int handle_input(char* input){
     //handle first char in input is EOF
     if(input[0] == EOF || input[len - 1] == EOF){
         free(input);
-        cleanup_and_exit();
+        cleanup();
+        exit(0);
         return result;
     }
     char* copy = (char*)malloc(len + 1);
@@ -107,7 +123,8 @@ int handle_input(char* input){
     if(strcmp(token, "exit") == 0){
         free(input);
         free(copy);
-        cleanup_and_exit();
+        cleanup();
+        exit(0);
         return result;
     }
     else if(strcmp(token, "!history") == 0){
@@ -133,7 +150,13 @@ int handle_input(char* input){
 
     //all of these commands must be saved in history
     vector_push_back(history, copy);
-    if(check_and_op(copy) == 0){
+    if(strcmp(token, "ps") == 0){
+        ps();
+        free(input);
+        free(copy);
+        return result;
+    }
+    else if(check_and_op(copy) == 0){
         free(input);
         free(copy);
         return result;
@@ -147,6 +170,11 @@ int handle_input(char* input){
         free(input);
         free(copy);
         return result;
+    }
+    else if(strrchr(copy, '&') != NULL){
+        char* loc = strrchr(copy, '&');
+        *loc = '\0';
+        result = handle_background_command(copy);
     }  
     else if(strcmp(token, "cd") == 0){
         token = strtok(NULL, " ");
@@ -158,7 +186,6 @@ int handle_input(char* input){
         if(token){
             sscanf(token, "%d", &pid);
         }
-
         result = send_kill(copy, pid);
     }
     else if(strcmp(token, "stop") == 0){
@@ -181,16 +208,37 @@ int handle_input(char* input){
         result = handle_external_command(copy);
     }
     free(input);
-    //input = NULL;
+    input = NULL;
     free(copy);
     return result;
 }
+
 int handle_external_command(char* input){
     char* input_copy = malloc(strlen(input) + 1);
     strcpy(input_copy, input);
+    char** args = getargs(input);
+    fflush(stdout);
+    fflush(stdin);
+    int res = exec_external(input_copy, args);
+    free(input_copy);
+    return res;
+}
+
+int handle_background_command(char* input){
+    char* input_copy = malloc(strlen(input) + 1);
+    strcpy(input_copy, input);
+    char** args = getargs(input);
+    fflush(stdout);
+    fflush(stdin);
+    int res = exec_background(input_copy, args);
+    free(input_copy);
+    return res;
+}
+
+char** getargs(char* input){
     char* token = strtok(input, " ");
     size_t i = 1;
-    char** args = malloc(i * sizeof(char*));
+    char** args = malloc(sizeof(char*));
     while(token != NULL){
         char* copy = malloc(strlen(token) + 1);
         strcpy(copy, token);
@@ -200,17 +248,41 @@ int handle_external_command(char* input){
         token = strtok(NULL, " ");
     }
     args[i - 1] = NULL;
-    fflush(stdout);
-    int res = exec_external(input_copy, args);
-    for(size_t j = 0; j < i; j++){
-        free(args[j]);
+    return args;
+}
+
+int exec_background(char* command, char** args){
+    reap_children();
+    pid_t f = fork();
+    if(f == -1){
+        print_fork_failed();
+        return 1;
+    } else if (f == 0){
+        print_command_executed(getpid());
+        execvp(args[0], args);
+        print_exec_failed(command);
+        print_invalid_command(command);
+        size_t i = 0;
+        while(args[i] != NULL){
+            free(args[i]);
+            i++;
+        }
+        free(args);
+        cleanup();
+        exit(1);
+    } else {
+        if(setpgid(f, f) != 0){
+            print_setpgid_failed();
+        }
+        process* p1 = create_process(command, f);
+        vector_push_back(processes, p1);
+        //printf("processes size: %lu\n", vector_size(processes));
+        return 1;
     }
-    free(args);
-    free(input_copy);
-    return res;
 }
 
 int exec_external(char* command, char** args){
+    reap_children();
     pid_t f = fork();
     if(f == -1){
         print_fork_failed();
@@ -222,9 +294,25 @@ int exec_external(char* command, char** args){
         execvp(args[0], args);
         print_exec_failed(command);
         print_invalid_command(command);
+        size_t i = 0;
+        while(args[i] != NULL){
+            free(args[i]);
+            i++;
+        }
+        free(args);
+        cleanup();
         exit(1);
     }
+    if(setpgid(f, f) != 0){
+            print_setpgid_failed();
+    }
     foreground = f;
+    size_t i = 0;
+    while(args[i] != NULL){
+        free(args[i]);
+        i++;
+    }
+    free(args);
     int status;
     int res = waitpid(f, &status, 0);
     if(res == -1){
@@ -287,7 +375,6 @@ void print_history_idx(size_t idx){
         char* match = (char*)vector_get(history, idx);
         char* copy = malloc(strlen(match) + 1);
         strcpy(copy, match);
-        printf("copy: %s\n", copy);
         handle_input(copy);
     }
     return;
@@ -370,13 +457,14 @@ int check_semi_op(char* command){
     return 0;
 }
 
-void cleanup_and_exit(void){
+void cleanup(void){
     fflush(stdout);
     save_history();
     vector_destroy(history);
+    kill_and_clean_children();
+    vector_destroy(processes);
     free(script_filename);
     free(history_filename);
-    exit(0);
 }
 
 void handle_args(int argc, char*argv[]){
@@ -393,28 +481,32 @@ void handle_args(int argc, char*argv[]){
         }
         else{
             print_usage();
-            cleanup_and_exit();
+            cleanup();
+            exit(0);
         }
         opt = getopt(argc, argv, options);
     }
     if(script_filename && history_filename){
         if(argc != 5){
             print_usage();
-            cleanup_and_exit();
+            cleanup();
+            exit(0);
         }
         return;
     }
     else if(script_filename || history_filename){ 
         if(argc != 3){
             print_usage();
-            cleanup_and_exit();
+            cleanup();
+            exit(0);
         }
         return;
     }
     else{
         if(argc != 1){
             print_usage();
-            cleanup_and_exit();
+            cleanup();
+            exit(0);
         }
         return;
     }
@@ -427,7 +519,8 @@ void load_script(){
     FILE* f = fopen(script_filename, "r");
     if(f == NULL){
         print_script_file_error();
-        cleanup_and_exit();
+        cleanup();
+        exit(0);
     }
     char * line = NULL;
     size_t len = 0;
@@ -449,7 +542,8 @@ void load_script(){
     }
     free(line);
     fclose(f);
-    cleanup_and_exit();
+    cleanup();
+    exit(0);
 }
 
 void load_history(){
@@ -550,3 +644,160 @@ process* find_process_pid(int input_pid){
     }
     return NULL;
 }
+
+process* create_process(char* command, pid_t id){
+    process* result = (process*)malloc(sizeof(process));
+    result->pid = id;
+    char* cpy = (char*)malloc(strlen(command) + 1);
+    strcpy(cpy, command);
+    result->command = cpy;
+    return result;
+}
+
+void destroy_process(process* input){
+    free(input->command);
+    free(input);
+    return;
+}
+
+void reap_children(){
+    size_t i = 0;
+    while(i < vector_size(processes)){
+        process* current = (process*)vector_get(processes, i);
+        pid_t pid = current->pid;
+        int status;
+        //printf("BEFORE\n");
+        waitpid(pid, &status, WNOHANG);
+        //printf("AFTER\n");
+        if(WIFEXITED(status)){
+            destroy_process(current);
+            current = NULL;
+            vector_erase(processes, i);
+        } else{
+            i++;
+        }
+    }
+}
+
+void kill_and_clean_children(){
+    size_t max = vector_size(processes);
+    for(size_t i = 0; i < max; i++){
+        process* current = (process*)vector_get(processes, i);
+        kill(current->pid, SIGKILL);
+        int status;
+        waitpid(current->pid, &status, 0);
+        destroy_process(current);
+        current = NULL;
+    }
+    return;
+}
+
+void ps(){
+    print_process_info_header();
+    reap_children();
+    size_t max = vector_size(processes);
+    process_info* info = get_info((int)getpid());
+    info->command = "./shell";
+    print_process_info(info);
+    free(info);
+
+    for(size_t i = 0; i < max; i++){
+        //printf("i: %lu\n", i);
+        process* current = (process*)vector_get(processes, i);
+        process_info* info = get_info((int)current->pid);
+        info->command = current->command;
+        print_process_info(info);
+        free(info);
+    }
+
+}
+
+process_info* get_info(int pid){
+    process_info* info = (process_info*)malloc(sizeof(process_info));
+    info->pid = pid;
+    info->nthreads = 0;
+    info->vsize = 0;
+    info->state = ' ';
+    info->start_str = "";
+    info->time_str = "";
+    char path[40];
+    char* line = NULL;
+    size_t cap = 0;
+    snprintf(path, 40, "/proc/%d/stat", pid);
+    FILE* f = fopen(path, "r");
+    getline(&line, &cap, f);
+    fclose(f);
+    char* token = strtok(line, " ");
+    int count = 1;
+    unsigned long utime;
+    unsigned long stime;
+    unsigned long long starttime;
+
+    while(token != NULL){
+        //must be state
+        if(count == 3){
+            char state;
+            sscanf(token, "%c", &state);
+            info->state = state;
+        //must be utime
+        } else if(count == 14){
+            sscanf(token, "%lu", &utime);
+        //must be stime
+        } else if(count == 15){
+            sscanf(token, "%lu", &stime);
+        //must be num_threads
+        } else if(count == 20){
+            long int threads;
+            sscanf(token, "%ld", &threads);
+            info->nthreads = threads;
+        //must be starttime
+        } else if(count == 22){
+            sscanf(token, "%llu", &starttime);
+        //must be vsize
+        } else if(count == 23){
+            unsigned long bytes;
+            sscanf(token, "%lu", &bytes);
+            //CONVERT TO KB;
+            unsigned long int kb = bytes / 1000;
+            info->vsize = kb;
+        } 
+        token = strtok(NULL, " ");
+        count++;
+    }
+    free(line);
+    info->start_str = calc_start_time(starttime);
+    info->time_str = calc_time_str(utime, stime);
+    return info;
+}
+
+char* calc_start_time(unsigned long long starttime){
+    unsigned long long start_seconds = starttime / sysconf(_SC_CLK_TCK);
+    unsigned long long boot_time = 0;
+    FILE* f = fopen("/proc/stat", "r");
+    char* line = NULL;
+    size_t cap = 0;
+    while(getline(&line, &cap, f) != -1){
+        if(strncmp(line, "btime", 5) != 0){
+            continue;
+        }
+        sscanf(line + 7, "%llu", &boot_time);
+        break;
+    }
+    fclose(f);
+    time_t aa = boot_time + start_seconds;
+    struct tm* loc = localtime(&aa);
+    char* buf = malloc(20);
+    time_struct_to_string(buf, 20, loc);
+    return buf;
+}
+char* calc_time_str(unsigned long utime, unsigned long stime){
+    size_t secs = (stime + utime) / sysconf(_SC_CLK_TCK);
+    size_t seconds = secs % 60;
+    size_t minutes = secs / 60;
+    char* buf = malloc(20);
+    execution_time_to_string(buf, 20, minutes, seconds);
+    //printf("res: %d\n", res);
+    //printf("buf: %s\n", buf);
+    return buf;
+}
+

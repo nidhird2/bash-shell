@@ -621,8 +621,14 @@ int send_stop(char* command, pid_t pid){
     }
 
     kill(pid, SIGTSTP);
+    printf("stop sent\n");
     print_stopped_process(pid, found->command);
     reap_children();
+    // int status;
+    // waitpid(pid, &status, WNOHANG);
+    // if(WIFEXITED(status)){
+    //     printf("exit status: %d\n", WEXITSTATUS(status));
+    // }
     return 0;
 }
 
@@ -675,9 +681,10 @@ void reap_children(){
         pid_t pid = current->pid;
         int status;
         //printf("BEFORE\n");
-        waitpid(pid, &status, WNOHANG);
         //printf("AFTER\n");
-        if(WIFEXITED(status)){
+        if(0 < waitpid(pid, &status, WNOHANG)){
+            printf("%d has exited\n", pid);
+            printf("Child %d terminated with status: %d\n", pid, WEXITSTATUS(status)); 
             destroy_process(current);
             current = NULL;
             vector_erase(processes, i);
@@ -720,7 +727,6 @@ void ps(){
         free(info->time_str);
         free(info);
     }
-
 }
 
 process_info* get_info(int pid){

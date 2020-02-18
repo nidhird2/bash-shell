@@ -276,7 +276,12 @@ int exec_background(char* command, char** args){
         }
         process* p1 = create_process(command, f);
         vector_push_back(processes, p1);
-        //printf("processes size: %lu\n", vector_size(processes));
+        size_t i = 0;
+        while(args[i] != NULL){
+            free(args[i]);
+            i++;
+        }
+        free(args);
         return 1;
     }
 }
@@ -600,6 +605,7 @@ int send_kill(char* command, int pid){
     }
     kill(pid, SIGTERM);
     print_killed_process(pid, found->command);
+    reap_children();
     return 0; 
 }
 
@@ -616,6 +622,7 @@ int send_stop(char* command, pid_t pid){
 
     kill(pid, SIGTSTP);
     print_stopped_process(pid, found->command);
+    reap_children();
     return 0;
 }
 
@@ -631,6 +638,7 @@ int send_cont(char* command, pid_t pid){
     }
     kill(pid, SIGCONT);
     print_continued_process(pid, found->command);
+    reap_children();
     return 1;
 }
 
@@ -699,14 +707,17 @@ void ps(){
     process_info* info = get_info((int)getpid());
     info->command = "./shell";
     print_process_info(info);
+    free(info->start_str);
+    free(info->time_str);
     free(info);
 
     for(size_t i = 0; i < max; i++){
-        //printf("i: %lu\n", i);
         process* current = (process*)vector_get(processes, i);
         process_info* info = get_info((int)current->pid);
         info->command = current->command;
         print_process_info(info);
+        free(info->start_str);
+        free(info->time_str);
         free(info);
     }
 
@@ -758,7 +769,7 @@ process_info* get_info(int pid){
             unsigned long bytes;
             sscanf(token, "%lu", &bytes);
             //CONVERT TO KB;
-            unsigned long int kb = bytes / 1000;
+            unsigned long int kb = bytes / 1024;
             info->vsize = kb;
         } 
         token = strtok(NULL, " ");
@@ -783,6 +794,7 @@ char* calc_start_time(unsigned long long starttime){
         sscanf(line + 7, "%llu", &boot_time);
         break;
     }
+    free(line);
     fclose(f);
     time_t aa = boot_time + start_seconds;
     struct tm* loc = localtime(&aa);
@@ -791,13 +803,11 @@ char* calc_start_time(unsigned long long starttime){
     return buf;
 }
 char* calc_time_str(unsigned long utime, unsigned long stime){
-    size_t secs = (stime + utime) / sysconf(_SC_CLK_TCK);
+    unsigned long secs = (stime + utime) / sysconf(_SC_CLK_TCK);
     size_t seconds = secs % 60;
     size_t minutes = secs / 60;
     char* buf = malloc(20);
     execution_time_to_string(buf, 20, minutes, seconds);
-    //printf("res: %d\n", res);
-    //printf("buf: %s\n", buf);
     return buf;
 }
 

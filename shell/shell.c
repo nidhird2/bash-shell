@@ -183,7 +183,7 @@ int handle_input(char* input){
     }
     else if(strrchr(copy, '&') != NULL){
         char* loc = strrchr(copy, '&');
-        *loc = '\0';
+        *(loc-1) = '\0';
         result = handle_background_command(copy);
     }  
     else if(strcmp(token, "cd") == 0){

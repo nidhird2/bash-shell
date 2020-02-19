@@ -263,11 +263,15 @@ char** getargs(char* input){
 
 int exec_background(char* command, char** args){
     reap_children();
+    fflush(stdout);
+    fflush(stdin);
     pid_t f = fork();
     if(f == -1){
         print_fork_failed();
         return 1;
     } else if (f == 0){
+        fflush(stdout);
+        fflush(stdin);
         print_command_executed(getpid());
         execvp(args[0], args);
         print_exec_failed(command);
@@ -298,6 +302,8 @@ int exec_background(char* command, char** args){
 
 int exec_external(char* command, char** args){
     reap_children();
+    fflush(stdout);
+    fflush(stdin);
     pid_t f = fork();
     if(f == -1){
         print_fork_failed();
@@ -330,6 +336,8 @@ int exec_external(char* command, char** args){
     free(args);
     int status;
     int res = waitpid(f, &status, 0);
+    fflush(stdout);
+    fflush(stdin);
     if(res == -1){
         print_wait_failed();
     }

@@ -799,7 +799,7 @@ process_info* get_info(int pid){
 }
 
 char* calc_start_time(unsigned long long starttime){
-    unsigned long long start_seconds = starttime / sysconf(_SC_CLK_TCK);
+    starttime = starttime / sysconf(_SC_CLK_TCK);
     unsigned long long boot_time = 0;
     FILE* f = fopen("/proc/stat", "r");
     char* line = NULL;
@@ -813,16 +813,18 @@ char* calc_start_time(unsigned long long starttime){
     }
     free(line);
     fclose(f);
-    time_t aa = (boot_time + start_seconds);
-    struct tm* loc = localtime(&aa);
     char* buf = malloc(20);
-    time_struct_to_string(buf, 20, loc);
+    unsigned long long total = boot_time + starttime;
+    time_t aa = (total);
+    time_struct_to_string(buf, 20, localtime(&aa));
     return buf;
 }
 char* calc_time_str(unsigned long utime, unsigned long stime){
-    unsigned long secs = (stime + utime) / sysconf(_SC_CLK_TCK);
-    size_t seconds = secs % 60;
-    size_t minutes = secs / 60;
+    utime = utime / sysconf(_SC_CLK_TCK);
+    stime = stime / sysconf(_SC_CLK_TCK);
+    unsigned long long total = utime + stime;
+    size_t seconds = total % 60;
+    size_t minutes = total / 60;
     char* buf = malloc(20);
     execution_time_to_string(buf, 20, minutes, seconds);
     return buf;
@@ -1029,4 +1031,3 @@ int redirect_input(char* command){
         return 0;
     }
 }
-

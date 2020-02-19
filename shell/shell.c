@@ -59,7 +59,11 @@ process* create_process(char*, pid_t);
 void destroy_process(process*);
 void read_children();
 void kill_and_clean_children();
+int redirect_output(char*);
 
+int redirect_append(char*);
+
+int redirect_input(char*);
 
 
 int shell(int argc, char *argv[]) {
@@ -170,6 +174,12 @@ int handle_input(char* input){
         free(input);
         free(copy);
         return result;
+    } else if(strstr(copy, " > ") != NULL){
+        result = redirect_output(copy);
+    } else if(strstr(copy, " >> ") != NULL){
+        result = redirect_append(copy);
+    } else if(strstr(copy, " < ") != NULL){
+        result = redirect_input(copy);
     }
     else if(strrchr(copy, '&') != NULL){
         char* loc = strrchr(copy, '&');
@@ -598,6 +608,7 @@ int send_kill(char* command, int pid){
         print_invalid_command(command);
         return 1;
     }
+    reap_children();
     process* found = find_process_pid(pid);
     if(found == NULL){
         print_no_process_found(pid);
@@ -614,6 +625,7 @@ int send_stop(char* command, pid_t pid){
         print_invalid_command(command);
         return 1;
     }
+    reap_children();
     process* found = find_process_pid(pid);
     if(found == NULL){
         print_no_process_found(pid);
@@ -624,11 +636,6 @@ int send_stop(char* command, pid_t pid){
     printf("stop sent\n");
     print_stopped_process(pid, found->command);
     reap_children();
-    // int status;
-    // waitpid(pid, &status, WNOHANG);
-    // if(WIFEXITED(status)){
-    //     printf("exit status: %d\n", WEXITSTATUS(status));
-    // }
     return 0;
 }
 
@@ -637,6 +644,7 @@ int send_cont(char* command, pid_t pid){
         print_invalid_command(command);
         return 1;
     }
+    reap_children();
     process* found = find_process_pid(pid);
     if(found == NULL){
         print_no_process_found(pid);
@@ -644,7 +652,6 @@ int send_cont(char* command, pid_t pid){
     }
     kill(pid, SIGCONT);
     print_continued_process(pid, found->command);
-    reap_children();
     return 1;
 }
 
@@ -680,11 +687,7 @@ void reap_children(){
         process* current = (process*)vector_get(processes, i);
         pid_t pid = current->pid;
         int status;
-        //printf("BEFORE\n");
-        //printf("AFTER\n");
         if(0 < waitpid(pid, &status, WNOHANG)){
-            printf("%d has exited\n", pid);
-            printf("Child %d terminated with status: %d\n", pid, WEXITSTATUS(status)); 
             destroy_process(current);
             current = NULL;
             vector_erase(processes, i);
@@ -802,7 +805,7 @@ char* calc_start_time(unsigned long long starttime){
     }
     free(line);
     fclose(f);
-    time_t aa = boot_time + start_seconds;
+    time_t aa = (boot_time + start_seconds);
     struct tm* loc = localtime(&aa);
     char* buf = malloc(20);
     time_struct_to_string(buf, 20, loc);
@@ -815,5 +818,207 @@ char* calc_time_str(unsigned long utime, unsigned long stime){
     char* buf = malloc(20);
     execution_time_to_string(buf, 20, minutes, seconds);
     return buf;
+}
+
+int redirect_output(char* command){
+    char* loc = strstr(command, " > ");
+    *loc = '\0';
+    char* filename = malloc(strlen(loc + 3) + 1);
+    strcpy(filename, loc + 3);
+    char** args = getargs(command);
+    FILE* file = fopen(filename, "w");
+    if(file == NULL){
+         print_redirection_file_error();
+         return 1;
+    }
+    fflush(stdout);
+    fflush(stdin);
+    fflush(file);
+    pid_t f = fork();
+    if(f == -1){
+        size_t i = 0;
+        while(args[i] != NULL){
+            free(args[i]);
+            i++;
+        }
+        free(args[i]);
+        free(filename);
+        fclose(file);
+        return 1;
+    }
+    //child
+    else if(f == 0){
+        print_command_executed(getpid());
+        fflush(stdout);
+        fflush(stdin);
+        fflush(file);
+        dup2(fileno(file), STDOUT_FILENO);
+        fclose(file);
+        free(filename);
+        execvp(args[0], args);
+        print_exec_failed(command);
+        print_invalid_command(command);
+        size_t i = 0;
+        while(args[i] != NULL){
+            free(args[i]);
+            i++;
+        }
+        free(args);
+        cleanup();
+        exit(1);
+    }
+    else{
+        foreground = f;
+        size_t i = 0;
+        while(args[i] != NULL){
+            free(args[i]);
+            i++;
+        }
+        free(args);
+        free(filename);
+        int status;
+        int res = waitpid(f, &status, 0);
+        if(res == -1){
+            print_wait_failed();
+        }
+        foreground = 0;
+        fclose(file);
+        return 0;
+    }
+}
+
+int redirect_append(char* command){
+    char* loc = strstr(command, " >> ");
+    *loc = '\0';
+    char* filename = malloc(strlen(loc + 4) + 1);
+    strcpy(filename, loc + 4);
+    char** args = getargs(command);
+    FILE* file = fopen(filename, "a");
+    if(file == NULL){
+         print_redirection_file_error();
+         return 1;
+    }
+    fflush(stdout);
+    fflush(stdin);
+    fflush(file);
+    pid_t f = fork();
+    if(f == -1){
+        size_t i = 0;
+        while(args[i] != NULL){
+            free(args[i]);
+            i++;
+        }
+        free(args[i]);
+        free(filename);
+        fclose(file);
+        return 1;
+    }
+    //child
+    else if(f == 0){
+        print_command_executed(getpid());
+        fflush(stdout);
+        fflush(stdin);
+        fflush(file);
+        dup2(fileno(file), STDOUT_FILENO);
+        fclose(file);
+        free(filename);
+        execvp(args[0], args);
+        print_exec_failed(command);
+        print_invalid_command(command);
+        size_t i = 0;
+        while(args[i] != NULL){
+            free(args[i]);
+            i++;
+        }
+        free(args);
+        cleanup();
+        exit(1);
+    }
+    else{
+        foreground = f;
+        size_t i = 0;
+        while(args[i] != NULL){
+            free(args[i]);
+            i++;
+        }
+        free(args);
+        free(filename);
+        int status;
+        int res = waitpid(f, &status, 0);
+        if(res == -1){
+            print_wait_failed();
+        }
+        foreground = 0;
+        fclose(file);
+        return 0;
+    }
+}
+
+int redirect_input(char* command){
+    char* loc = strstr(command, " < ");
+    *loc = '\0';
+    char* filename = malloc(strlen(loc + 3) + 1);
+    strcpy(filename, loc + 3);
+    char** args = getargs(command);
+    printf("filename: %s\n", filename);
+    FILE* file = fopen(filename, "r");
+    if(file == NULL){
+         print_redirection_file_error();
+         return 1;
+    }
+    fflush(stdout);
+    fflush(stdin);
+    fflush(file);
+    pid_t f = fork();
+    if(f == -1){
+        size_t i = 0;
+        while(args[i] != NULL){
+            free(args[i]);
+            i++;
+        }
+        free(args[i]);
+        free(filename);
+        fclose(file);
+        return 1;
+    }
+    //child
+    else if(f == 0){
+        print_command_executed(getpid());
+        fflush(stdout);
+        fflush(stdin);
+        fflush(file);
+        dup2(fileno(file), STDIN_FILENO);
+        fclose(file);
+        free(filename);
+        execvp(args[0], args);
+        print_exec_failed(command);
+        print_invalid_command(command);
+        size_t i = 0;
+        while(args[i] != NULL){
+            free(args[i]);
+            i++;
+        }
+        free(args);
+        cleanup();
+        exit(1);
+    }
+    else{
+        foreground = f;
+        size_t i = 0;
+        while(args[i] != NULL){
+            free(args[i]);
+            i++;
+        }
+        free(args);
+        free(filename);
+        int status;
+        int res = waitpid(f, &status, 0);
+        if(res == -1){
+            print_wait_failed();
+        }
+        foreground = 0;
+        fclose(file);
+        return 0;
+    }
 }
 

@@ -808,7 +808,7 @@ char* calc_start_time(unsigned long long starttime){
         if(strncmp(line, "btime", 5) != 0){
             continue;
         }
-        sscanf(line + 7, "%llu", &boot_time);
+        sscanf(line + 6, "%llu", &boot_time);
         break;
     }
     free(line);

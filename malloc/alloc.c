@@ -9,14 +9,74 @@
 #include <math.h>
 
 typedef struct _metadata_entry_t{
-    void* ptr;
     size_t size;
     int free;
     struct _metadata_entry_t* next;
+    struct _boundary_tag* tag;
 } meta_t;
+
+typedef struct _boundary_tag{
+    size_t size;
+    meta_t* start;
+} btag;
 
 //static meta_t* head = NULL;
 static meta_t* head_available = NULL;
+static size_t split_threshold = 16;
+
+
+void split_me(meta_t* me, size_t size){
+    size_t current_size = me->size;
+    if(current_size <= size){
+        return;
+    }
+    if(current_size < size + sizeof(meta_t) + sizeof(btag) + split_threshold){
+        return;
+    }
+    meta_t* split = ((void*)me->tag) + sizeof(btag);
+    split->free=1;
+    split->next= head_available;
+    head_available = split;
+    split->size= (me->size) - sizeof(meta_t) - sizeof(btag);
+    split->tag = ((void*)split + 1) + size;
+    split->tag->size= split->size;
+    split->tag->start = split;
+}
+
+void coalesce_me(meta_t* me){
+    // btag* prev_boundary;
+    // meta_t* next = ((void*)me->tag) + sizeof(btag);
+    // if(me == sbrk(0)){
+    //     prev_boundary = NULL;
+    // }
+    // else{
+    //     prev_boundary = ((void*)me)- sizeof(btag);
+    // }
+
+}
+
+void* get_new_space(size_t size){
+    meta_t* chosen = sbrk(0);
+    //sbrk didn't give us more space :(
+    if(sbrk((size + sizeof(meta_t) + sizeof(btag)) * 2) == (void*)-1){
+        return NULL;
+    }
+    chosen->size = size;
+    chosen->free = 0;
+    chosen->next = NULL;
+    chosen->tag = ((void*)(chosen + 1)) + size;
+    chosen->tag->size = size;
+    chosen->tag->start = chosen;
+    meta_t* new_entry = ((void*)chosen->tag) + sizeof(btag);
+    new_entry->size = size;
+    new_entry->free = 1;
+    new_entry->next = head_available;
+    new_entry->tag = ((void*)(new_entry+ 1)) + size;
+    new_entry->tag->size = size;
+    new_entry->tag->start = new_entry;
+    head_available = new_entry;
+    return (void*)(chosen + 1);
+}
 
 /**
  * Allocate space for array in memory
@@ -72,9 +132,7 @@ void *calloc(size_t num, size_t size) {
  *
  * @see http://www.cplusplus.com/reference/clibrary/cstdlib/malloc/
  */
-void* getHead(){
-    return head_available;
-}
+
 void *malloc(size_t size) {
     // implement malloc!
     meta_t* p_previous = NULL;
@@ -89,12 +147,18 @@ void *malloc(size_t size) {
                 chosen = p;
                 chosen_previous = p_previous;
             }
+            if(p->size == chosen->size){
+                break;
+            }
         }
         p = p->next;
         p_previous = p;
     }
     if(chosen != NULL){
         //todo: check for block splitting
+        if(chosen->size > size){
+            split_me(chosen, size);
+        }
         chosen->free = 0;
         if(chosen_previous != NULL){
             chosen_previous->next = chosen->next;
@@ -102,25 +166,10 @@ void *malloc(size_t size) {
         if(chosen_previous == NULL){
             head_available = chosen->next;
         }
-        return chosen->ptr;
+        return (void*)(chosen+1);
     }
     //no space found: make space!!
-    chosen = sbrk(0);
-    //sbrk didn't give us more space :(
-    if(sbrk((size + sizeof(meta_t)) * 2) == (void*)-1){
-        return NULL;
-    }
-    chosen->ptr = chosen + 1;
-    chosen->size = size;
-    chosen->free = 0;
-    chosen->next = NULL;
-    meta_t* new_entry = chosen->ptr + size;
-    new_entry->ptr = new_entry+1;
-    new_entry->size = size;
-    new_entry->free = 1;
-    new_entry->next = head_available;
-    head_available = new_entry;
-    return chosen->ptr;
+    return get_new_space(size);
 }
 
 /**
@@ -197,13 +246,21 @@ void free(void *ptr) {
  */
 void *realloc(void *ptr, size_t size) {
     // implement realloc!
-    meta_t* met = ((void*)ptr) - sizeof(meta_t);
+    if(ptr == NULL){
+        return malloc(size);
+    }
+    if(size == 0){
+        free(ptr);
+        return NULL;
+    }
+    meta_t* met = (meta_t*)ptr - 1;
+    //if you already enough space in current ptr
     if(met->size >= size){
+        split_me(met, size);
         return ptr;
     }
     void* res = malloc(size);
-    meta_t* prev = (meta_t*)ptr - 1;
-    memcpy(res,ptr,(int)fmin(size, prev->size));
+    memcpy(res,ptr,(int)fmin(size, met->size));
     free(ptr);
-    return NULL;
+    return res;
 }

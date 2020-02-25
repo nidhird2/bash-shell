@@ -6,6 +6,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <math.h>
+
+typedef struct _metadata_entry_t{
+    void* ptr;
+    size_t size;
+    int free;
+    struct _metadata_entry_t* next;
+} meta_t;
+
+//static meta_t* head = NULL;
+static meta_t* head_available = NULL;
 
 /**
  * Allocate space for array in memory
@@ -32,7 +43,12 @@
  */
 void *calloc(size_t num, size_t size) {
     // implement calloc!
-    return NULL;
+    void* res = malloc(num*size);
+    if(res == NULL){
+        return res;
+    }
+    memset(res, 0, num * size);
+    return res;
 }
 
 /**
@@ -56,9 +72,55 @@ void *calloc(size_t num, size_t size) {
  *
  * @see http://www.cplusplus.com/reference/clibrary/cstdlib/malloc/
  */
+void* getHead(){
+    return head_available;
+}
 void *malloc(size_t size) {
     // implement malloc!
-    return NULL;
+    meta_t* p_previous = NULL;
+    meta_t* p = head_available;
+    meta_t* chosen = NULL;
+    meta_t* chosen_previous = NULL;
+    //printf("head available: %p\n", head_available);
+    
+    while(p != NULL){
+        if(p->free && p->size >= size){
+            if(chosen == NULL || p->size < chosen->size){
+                chosen = p;
+                chosen_previous = p_previous;
+            }
+        }
+        p = p->next;
+        p_previous = p;
+    }
+    if(chosen != NULL){
+        //todo: check for block splitting
+        chosen->free = 0;
+        if(chosen_previous != NULL){
+            chosen_previous->next = chosen->next;
+        }
+        if(chosen_previous == NULL){
+            head_available = chosen->next;
+        }
+        return chosen->ptr;
+    }
+    //no space found: make space!!
+    chosen = sbrk(0);
+    //sbrk didn't give us more space :(
+    if(sbrk((size + sizeof(meta_t)) * 2) == (void*)-1){
+        return NULL;
+    }
+    chosen->ptr = chosen + 1;
+    chosen->size = size;
+    chosen->free = 0;
+    chosen->next = NULL;
+    meta_t* new_entry = chosen->ptr + size;
+    new_entry->ptr = new_entry+1;
+    new_entry->size = size;
+    new_entry->free = 1;
+    new_entry->next = head_available;
+    head_available = new_entry;
+    return chosen->ptr;
 }
 
 /**
@@ -79,6 +141,13 @@ void *malloc(size_t size) {
  */
 void free(void *ptr) {
     // implement free!
+    if(ptr == NULL){
+        return;
+    }
+    meta_t* p = ptr - sizeof(meta_t);
+    p->free = 1;
+    p->next = head_available;
+    head_available = p;
 }
 
 /**
@@ -128,5 +197,13 @@ void free(void *ptr) {
  */
 void *realloc(void *ptr, size_t size) {
     // implement realloc!
+    meta_t* met = ((void*)ptr) - sizeof(meta_t);
+    if(met->size >= size){
+        return ptr;
+    }
+    void* res = malloc(size);
+    meta_t* prev = (meta_t*)ptr - 1;
+    memcpy(res,ptr,(int)fmin(size, prev->size));
+    free(ptr);
     return NULL;
 }

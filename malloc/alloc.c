@@ -159,7 +159,7 @@ void* get_new_space(size_t size){
     }
     lower_limit = (void*)(chosen_tag+1);
     chosen->next = head_used;
-    head_used = chosen;
+    //head_used = chosen;
     return (void*)(chosen + 1);
 }
 
@@ -246,18 +246,19 @@ void *malloc(size_t size) {
     }
     if(chosen != NULL){
         //check for block splitting
+        if(head_available == chosen){
+            head_available = chosen->next;
+        }
         if(chosen->size > size){
             split_me(chosen, size);
         }
-        chosen->free = 0;
         if(chosen_previous != NULL){
             chosen_previous->next = chosen->next;
         }
-        else if(head_available == chosen){
-            head_available = chosen->next;
-        }
+        chosen->free = 0;
         chosen->next = head_used;
         head_used = chosen;
+        remove_frees(chosen);
         return (void*)(chosen+1);
     }
     //no space found: make space!!

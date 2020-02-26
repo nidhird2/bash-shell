@@ -12,18 +12,104 @@ typedef struct _metadata_entry_t{
     size_t size;
     int free;
     struct _metadata_entry_t* next;
-    struct _boundary_tag* tag;
 } meta_t;
 
 typedef struct _boundary_tag{
     size_t size;
-    meta_t* start;
 } btag;
 
 //static meta_t* head = NULL;
 static meta_t* head_available = NULL;
-static size_t split_threshold = 16;
+static meta_t* head_used;
+static size_t split_threshold = 100;
+static void* limit = NULL;
+static int first = 1;
+static size_t bytes_malloced = 0;
+static size_t coalesce_threshold = 10000;
 
+
+void remove_frees(meta_t* to_remove){
+    meta_t* current = head_available;
+    meta_t* prev_free = NULL;
+    while(current != NULL){
+        if(to_remove == current){
+            if(prev_free != NULL){
+                prev_free->next = to_remove->next;
+            }
+            else{
+                head_available = to_remove->next;
+            }
+            break;
+        }
+        prev_free = current;
+        current = current->next;
+    }
+    return;
+}
+
+void coalesce_two(meta_t* prev, meta_t* current){
+    if(((void*)(prev + 1)) + prev->size +sizeof(btag) != (void*)current){
+        return;
+    }
+    if(prev->free != 1 || current->free != 1){
+        return;
+    }
+    prev->size += current->size + sizeof(meta_t) + sizeof(btag);
+    btag* tag = ((void*)(prev + 1)) + prev->size; 
+    tag->size = prev->size;
+    remove_frees(current);
+    return;
+}
+
+void coalesce_me(meta_t* me){
+    //printf("me: %p\n", me);
+    //printf("meta_t size: %lu\n", sizeof(meta_t));
+    //printf("ptr: %p\n", (void*)(me + 1));
+    btag* prev_tag;
+    meta_t* next = ((void*)(me + 1)) + me->size +sizeof(btag);
+    //printf("next: %p\n", next);
+    void* top = sbrk(0);
+    if(((void*)next) == top){
+        next = NULL;
+    }
+    if((void*)me <= limit){
+        prev_tag = NULL;
+    }else {
+        prev_tag = ((void*)me)- sizeof(btag);
+    }
+    if(prev_tag == NULL && next == NULL){
+        return;
+    }
+    if(prev_tag == NULL){
+        if(next->free == 1){
+            return coalesce_two(me, next);
+        }
+        return;
+    }
+    meta_t* prev = (meta_t*)(((char*)prev_tag) - (prev_tag->size) - sizeof(meta_t)); 
+    if(next == NULL){
+        if(prev->free == 1){
+            return coalesce_two(prev, me);
+        }
+        return;
+    }
+    //neither are free
+    if(prev -> free == 0 && next->free == 0){
+        return;
+    }
+    //only next is free
+    if(prev->free == 0 && next->free == 1){
+        return coalesce_two(me, next);
+    }
+    //only prev is free
+    else if(prev->free == 1 && next->free == 0){
+        return coalesce_two(prev, me);
+    }
+    else{
+        coalesce_two(me, next);
+        return coalesce_two(prev,me);
+    }
+}
 
 void split_me(meta_t* me, size_t size){
     size_t current_size = me->size;
@@ -33,29 +119,23 @@ void split_me(meta_t* me, size_t size){
     if(current_size < size + sizeof(meta_t) + sizeof(btag) + split_threshold){
         return;
     }
-    meta_t* split = ((void*)me->tag) + sizeof(btag);
+    size_t new_size = (me->size) - size - sizeof(meta_t) - sizeof(btag);
+    me->size = size;
+    btag* me_tag = ((void*)(me + 1)) + me->size;
+    me_tag->size = size;
+
+    meta_t* split = ((void*)me_tag) + sizeof(btag);
     split->free=1;
+    split->size= new_size;
+    btag* split_tag = ((void*)(split + 1)) + new_size;
+    split_tag->size= split->size;
     split->next= head_available;
     head_available = split;
-    split->size= (me->size) - sizeof(meta_t) - sizeof(btag);
-    split->tag = ((void*)split + 1) + size;
-    split->tag->size= split->size;
-    split->tag->start = split;
-}
-
-void coalesce_me(meta_t* me){
-    // btag* prev_boundary;
-    // meta_t* next = ((void*)me->tag) + sizeof(btag);
-    // if(me == sbrk(0)){
-    //     prev_boundary = NULL;
-    // }
-    // else{
-    //     prev_boundary = ((void*)me)- sizeof(btag);
-    // }
-
 }
 
 void* get_new_space(size_t size){
+    bytes_malloced += (2*size);
+    //fprintf(output, "making space\n");
     meta_t* chosen = sbrk(0);
     //sbrk didn't give us more space :(
     if(sbrk((size + sizeof(meta_t) + sizeof(btag)) * 2) == (void*)-1){
@@ -64,17 +144,21 @@ void* get_new_space(size_t size){
     chosen->size = size;
     chosen->free = 0;
     chosen->next = NULL;
-    chosen->tag = ((void*)(chosen + 1)) + size;
-    chosen->tag->size = size;
-    chosen->tag->start = chosen;
-    meta_t* new_entry = ((void*)chosen->tag) + sizeof(btag);
+    btag* chosen_tag = ((void*)(chosen + 1)) + size;
+    chosen_tag->size = size;
+    meta_t* new_entry = ((void*)chosen_tag) + sizeof(btag);
     new_entry->size = size;
     new_entry->free = 1;
     new_entry->next = head_available;
-    new_entry->tag = ((void*)(new_entry+ 1)) + size;
-    new_entry->tag->size = size;
-    new_entry->tag->start = new_entry;
+    btag* new_tag = ((void*)(new_entry+ 1)) + size;
+    new_tag->size = size;
     head_available = new_entry;
+    if(first){
+        first = 0;
+        limit = chosen;
+    }
+    chosen->next = head_used;
+    head_used = chosen;
     return (void*)(chosen + 1);
 }
 
@@ -135,6 +219,10 @@ void *calloc(size_t num, size_t size) {
 
 void *malloc(size_t size) {
     // implement malloc!
+    // if(output == NULL){
+    //     output = fopen("result.txt", "a");
+    //     fprintf(output, "making space\n");
+    // }
     meta_t* p_previous = NULL;
     meta_t* p = head_available;
     meta_t* chosen = NULL;
@@ -144,18 +232,18 @@ void *malloc(size_t size) {
     while(p != NULL){
         if(p->free && p->size >= size){
             if(chosen == NULL || p->size < chosen->size){
-                chosen = p;
+                chosen =  p;
                 chosen_previous = p_previous;
             }
             if(p->size == chosen->size){
                 break;
             }
         }
-        p = p->next;
         p_previous = p;
+        p = p->next;
     }
     if(chosen != NULL){
-        //todo: check for block splitting
+        //check for block splitting
         if(chosen->size > size){
             split_me(chosen, size);
         }
@@ -163,9 +251,11 @@ void *malloc(size_t size) {
         if(chosen_previous != NULL){
             chosen_previous->next = chosen->next;
         }
-        if(chosen_previous == NULL){
+        else if(chosen_previous == NULL){
             head_available = chosen->next;
         }
+        chosen->next = head_used;
+        head_used = chosen;
         return (void*)(chosen+1);
     }
     //no space found: make space!!
@@ -193,10 +283,43 @@ void free(void *ptr) {
     if(ptr == NULL){
         return;
     }
-    meta_t* p = ptr - sizeof(meta_t);
-    p->free = 1;
-    p->next = head_available;
-    head_available = p;
+    meta_t* target = ptr - sizeof(meta_t);
+    // meta_t* current = head_used;
+    // meta_t* current_prev = NULL;
+    // while(current != NULL){
+    //     if(target == current){
+    //         // if(current_prev != NULL){
+    //         //     current_prev->next = target->next;
+    //         // } else{
+    //         //     head_used = target->next;
+    //         // }
+    //         target->free = 1;
+    //         target->next = head_available;
+    //         head_available = target;
+    //         coalesce_me(ptr);
+    //         return;
+    //     }
+    //     current_prev = current;
+    //     current = current->next;
+    // }
+    target->free = 1;
+    target->next = head_available;
+    head_available = target;
+    if(bytes_malloced >= coalesce_threshold){
+        coalesce_me(target);
+    }
+    return;
+}
+
+void* find_used_match(void *ptr){
+    meta_t* target = (meta_t*)ptr - 1;
+    meta_t* current = head_used;
+    while(current != NULL){
+        if(current == target){
+            return target;
+        }
+    }
+    return NULL;
 }
 
 /**
@@ -253,8 +376,12 @@ void *realloc(void *ptr, size_t size) {
         free(ptr);
         return NULL;
     }
-    meta_t* met = (meta_t*)ptr - 1;
+    meta_t * met = ((meta_t*)ptr)-1;
+    //meta_t* met = find_used_match(ptr); 
     //if you already enough space in current ptr
+    // if(find_used_match(ptr) == NULL){
+    //     return malloc(size);
+    // }
     if(met->size >= size){
         split_me(met, size);
         return ptr;

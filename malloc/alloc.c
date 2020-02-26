@@ -10,7 +10,7 @@
 
 typedef struct _metadata_entry_t{
     size_t size;
-    int free;
+    unsigned int free : 1;
     struct _metadata_entry_t* next;
 } meta_t;
 
@@ -21,9 +21,10 @@ typedef struct _boundary_tag{
 //static meta_t* head = NULL;
 static meta_t* head_available = NULL;
 static meta_t* head_used;
-static size_t split_threshold = 100;
+static size_t split_threshold = 1000;
 static void* limit = NULL;
 static int first = 1;
+static void* lower_limit = NULL;
 static size_t bytes_malloced = 0;
 static size_t coalesce_threshold = 10000;
 
@@ -68,8 +69,7 @@ void coalesce_me(meta_t* me){
     btag* prev_tag;
     meta_t* next = ((void*)(me + 1)) + me->size +sizeof(btag);
     //printf("next: %p\n", next);
-    void* top = sbrk(0);
-    if(((void*)next) == top){
+    if(((void*)next) >= lower_limit){
         next = NULL;
     }
     if((void*)me <= limit){
@@ -157,6 +157,7 @@ void* get_new_space(size_t size){
         first = 0;
         limit = chosen;
     }
+    lower_limit = (void*)(chosen_tag+1);
     chosen->next = head_used;
     head_used = chosen;
     return (void*)(chosen + 1);
@@ -322,6 +323,36 @@ void* find_used_match(void *ptr){
     return NULL;
 }
 
+void* check_right_space(meta_t* me, size_t target){
+    meta_t* next = ((void*)(me + 1)) + me->size +sizeof(btag);
+    // printf("next: %p\n", next);
+    // printf("next ptr: %p\n", ((void*)(next + 1)));
+    if(((void*)next) >= lower_limit){
+        return NULL;
+    }
+    // printf("checking right space...\n");
+    // printf("ptr: %p\n", ((void*)(me + 1)));
+    // printf("next: %p\n", next);
+    // printf("next ptr: %p\n", ((void*)(next + 1)));
+
+    if(next->free == 0){
+        return NULL;
+    }
+    size_t new_size = me->size + sizeof(meta_t) + sizeof(btag) + next->size;
+    //printf("new size: %lu\n", new_size);
+    //printf("target size: %lu\n", target);
+    if(new_size < target){
+        return NULL;
+    }
+    // printf("attempts to use neighbor\n");
+    me->size += sizeof(meta_t) + sizeof(btag) + next->size;
+    btag* me_tag = ((void*)(me + 1)) + me->size;
+    me_tag->size = me->size;
+    remove_frees(next);
+    split_me(me, target);
+    return (void*)(me + 1); 
+}
+
 /**
  * Reallocate memory block
  *
@@ -377,6 +408,8 @@ void *realloc(void *ptr, size_t size) {
         return NULL;
     }
     meta_t * met = ((meta_t*)ptr)-1;
+    //printf("met size: %lu\n", met->size);
+    //printf("ptr: %p\n", ((void*)(met + 1)));
     //meta_t* met = find_used_match(ptr); 
     //if you already enough space in current ptr
     // if(find_used_match(ptr) == NULL){
@@ -386,8 +419,14 @@ void *realloc(void *ptr, size_t size) {
         split_me(met, size);
         return ptr;
     }
-    void* res = malloc(size);
-    memcpy(res,ptr,(int)fmin(size, met->size));
-    free(ptr);
+    //void* res = NULL;
+    //printf("ptr:%p\n", ptr);
+    void* res = check_right_space(met, size);
+    if(res == NULL){
+        res = malloc(size);
+        memcpy(res,ptr,(int)fmin(size, met->size));
+        free(ptr);
+        return res;
+    }
     return res;
 }

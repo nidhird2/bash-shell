@@ -21,12 +21,12 @@ typedef struct _boundary_tag{
 //static meta_t* head = NULL;
 static meta_t* head_available = NULL;
 static meta_t* head_used;
-static size_t split_threshold = 1000;
+static size_t split_threshold = 256;
 static void* limit = NULL;
 static int first = 1;
 static void* lower_limit = NULL;
-static size_t bytes_malloced = 0;
-static size_t coalesce_threshold = 10000;
+static size_t bytes_malloced = 1000;
+static size_t coalesce_threshold = 0;
 
 
 void remove_frees(meta_t* to_remove){
@@ -121,24 +121,24 @@ void split_me(meta_t* me, size_t size){
     }
     size_t new_size = (me->size) - size - sizeof(meta_t) - sizeof(btag);
     me->size = size;
-    btag* me_tag = ((void*)(me + 1)) + me->size;
+    btag* me_tag = (btag*)(((void*)(me + 1)) + me->size);
     me_tag->size = size;
 
     meta_t* split = ((void*)me_tag) + sizeof(btag);
     split->free=1;
     split->size= new_size;
-    btag* split_tag = ((void*)(split + 1)) + new_size;
+    btag* split_tag = (btag*)(((void*)(split + 1)) + new_size);
     split_tag->size= split->size;
     split->next= head_available;
     head_available = split;
 }
 
 void* get_new_space(size_t size){
-    bytes_malloced += (2*size);
+    bytes_malloced += (1*size);
     //fprintf(output, "making space\n");
     meta_t* chosen = sbrk(0);
     //sbrk didn't give us more space :(
-    if(sbrk((size + sizeof(meta_t) + sizeof(btag)) * 2) == (void*)-1){
+    if(sbrk((size + sizeof(meta_t) + sizeof(btag)) * 1) == (void*)-1){
         return NULL;
     }
     chosen->size = size;
@@ -146,13 +146,13 @@ void* get_new_space(size_t size){
     chosen->next = NULL;
     btag* chosen_tag = ((void*)(chosen + 1)) + size;
     chosen_tag->size = size;
-    meta_t* new_entry = ((void*)chosen_tag) + sizeof(btag);
-    new_entry->size = size;
-    new_entry->free = 1;
-    new_entry->next = head_available;
-    btag* new_tag = ((void*)(new_entry+ 1)) + size;
-    new_tag->size = size;
-    head_available = new_entry;
+    // meta_t* new_entry = ((void*)chosen_tag) + sizeof(btag);
+    // new_entry->size = size;
+    // new_entry->free = 1;
+    // new_entry->next = head_available;
+    // btag* new_tag = ((void*)(new_entry+ 1)) + size;
+    // new_tag->size = size;
+    // head_available = new_entry;
     if(first){
         first = 0;
         limit = chosen;
@@ -235,6 +235,7 @@ void *malloc(size_t size) {
             if(chosen == NULL || p->size < chosen->size){
                 chosen =  p;
                 chosen_previous = p_previous;
+                break;
             }
             if(p->size == chosen->size){
                 break;
@@ -252,7 +253,7 @@ void *malloc(size_t size) {
         if(chosen_previous != NULL){
             chosen_previous->next = chosen->next;
         }
-        else if(chosen_previous == NULL){
+        else if(head_available == chosen){
             head_available = chosen->next;
         }
         chosen->next = head_used;

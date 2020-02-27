@@ -12,39 +12,54 @@ typedef struct _metadata_entry_t{
     size_t size;
     unsigned int free : 1;
     struct _metadata_entry_t* next;
+    struct _metadata_entry_t* prev;
 } meta_t;
 
 typedef struct _boundary_tag{
     size_t size;
 } btag;
 
-//static meta_t* head = NULL;
-static meta_t* head_available = NULL;
-static meta_t* head_used;
-static size_t split_threshold = 256;
 static void* limit = NULL;
-static int first = 1;
 static void* lower_limit = NULL;
-static size_t bytes_malloced = 1000;
-static size_t coalesce_threshold = 0;
+static meta_t* head_available = NULL;
+static int first = 1;
+static size_t bytes_malloced = 0;
+
+//change to alter behavior:
+static size_t split_threshold = 1000;
+static size_t coalesce_threshold = 10000;
 
 
-void remove_frees(meta_t* to_remove){
-    meta_t* current = head_available;
-    meta_t* prev_free = NULL;
-    while(current != NULL){
-        if(to_remove == current){
-            if(prev_free != NULL){
-                prev_free->next = to_remove->next;
-            }
-            else{
-                head_available = to_remove->next;
-            }
-            break;
-        }
-        prev_free = current;
-        current = current->next;
+void remove_free(meta_t* to_remove){
+    // meta_t* current = head_available;
+    // meta_t* prev_free = NULL;
+    // while(current != NULL){
+    //     if(to_remove == current){
+    //         if(prev_free != NULL){
+    //             prev_free->next = to_remove->next;
+    //         }
+    //         else{
+    //             head_available = to_remove->next;
+    //         }
+    //         break;
+    //     }
+    //     prev_free = current;
+    //     current = current->next;
+    // }
+    if(to_remove->free == 0){
+        return;
     }
+    if(to_remove->prev != NULL){
+        to_remove->prev->next = to_remove->next;
+    } else {
+        head_available = to_remove->next;
+    }
+    if(to_remove->next != NULL){
+        to_remove->next->prev = to_remove->prev;
+    }
+    to_remove->next = NULL;
+    to_remove->prev = NULL;
+    to_remove->free = 0;
     return;
 }
 
@@ -58,7 +73,9 @@ void coalesce_two(meta_t* prev, meta_t* current){
     prev->size += current->size + sizeof(meta_t) + sizeof(btag);
     btag* tag = ((void*)(prev + 1)) + prev->size; 
     tag->size = prev->size;
-    remove_frees(current);
+    remove_free(current);
+    //prev->next = NULL;
+    //prev->prev = NULL;
     return;
 }
 
@@ -129,7 +146,11 @@ void split_me(meta_t* me, size_t size){
     split->size= new_size;
     btag* split_tag = (btag*)(((void*)(split + 1)) + new_size);
     split_tag->size= split->size;
+    split->prev = NULL;
     split->next= head_available;
+    if(head_available){
+        head_available->prev = split;
+    }
     head_available = split;
 }
 
@@ -158,7 +179,7 @@ void* get_new_space(size_t size){
         limit = chosen;
     }
     lower_limit = (void*)(chosen_tag+1);
-    chosen->next = head_used;
+    chosen->prev= NULL;
     //head_used = chosen;
     return (void*)(chosen + 1);
 }
@@ -224,41 +245,29 @@ void *malloc(size_t size) {
     //     output = fopen("result.txt", "a");
     //     fprintf(output, "making space\n");
     // }
-    meta_t* p_previous = NULL;
     meta_t* p = head_available;
     meta_t* chosen = NULL;
-    meta_t* chosen_previous = NULL;
     //printf("head available: %p\n", head_available);
     
     while(p != NULL){
         if(p->free && p->size >= size){
             if(chosen == NULL || p->size < chosen->size){
                 chosen =  p;
-                chosen_previous = p_previous;
                 break;
             }
-            if(p->size == chosen->size){
-                break;
-            }
+            // if(p->size == chosen->size){
+            //     break;
+            // }
         }
-        p_previous = p;
         p = p->next;
     }
     if(chosen != NULL){
         //check for block splitting
-        if(head_available == chosen){
-            head_available = chosen->next;
-        }
         if(chosen->size > size){
             split_me(chosen, size);
         }
-        if(chosen_previous != NULL){
-            chosen_previous->next = chosen->next;
-        }
-        chosen->free = 0;
-        chosen->next = head_used;
-        head_used = chosen;
-        remove_frees(chosen);
+        remove_free(chosen);
+        //remove_frees(chosen);
         return (void*)(chosen+1);
     }
     //no space found: make space!!
@@ -305,8 +314,13 @@ void free(void *ptr) {
     //     current_prev = current;
     //     current = current->next;
     // }
+
     target->free = 1;
+    if(head_available != NULL){
+        head_available->prev = target;
+    }
     target->next = head_available;
+    target->prev = NULL;
     head_available = target;
     if(bytes_malloced >= coalesce_threshold){
         coalesce_me(target);
@@ -314,16 +328,16 @@ void free(void *ptr) {
     return;
 }
 
-void* find_used_match(void *ptr){
-    meta_t* target = (meta_t*)ptr - 1;
-    meta_t* current = head_used;
-    while(current != NULL){
-        if(current == target){
-            return target;
-        }
-    }
-    return NULL;
-}
+// void* find_used_match(void *ptr){
+//     meta_t* target = (meta_t*)ptr - 1;
+//     meta_t* current = head_used;
+//     while(current != NULL){
+//         if(current == target){
+//             return target;
+//         }
+//     }
+//     return NULL;
+// }
 
 void* check_right_space(meta_t* me, size_t target){
     meta_t* next = ((void*)(me + 1)) + me->size +sizeof(btag);
@@ -350,7 +364,7 @@ void* check_right_space(meta_t* me, size_t target){
     me->size += sizeof(meta_t) + sizeof(btag) + next->size;
     btag* me_tag = ((void*)(me + 1)) + me->size;
     me_tag->size = me->size;
-    remove_frees(next);
+    remove_free(next);
     split_me(me, target);
     return (void*)(me + 1); 
 }
@@ -423,12 +437,12 @@ void *realloc(void *ptr, size_t size) {
     }
     //void* res = NULL;
     //printf("ptr:%p\n", ptr);
+    //void* res = NULL;
     void* res = check_right_space(met, size);
     if(res == NULL){
         res = malloc(size);
         memcpy(res,ptr,(int)fmin(size, met->size));
         free(ptr);
-        return res;
     }
     return res;
 }

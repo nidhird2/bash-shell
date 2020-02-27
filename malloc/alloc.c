@@ -13,6 +13,7 @@ typedef struct _metadata_entry_t{
     unsigned int free : 1;
     struct _metadata_entry_t* next;
     struct _metadata_entry_t* prev;
+    char data[0];
 } meta_t;
 
 typedef struct _boundary_tag{
@@ -26,8 +27,8 @@ static int first = 1;
 static size_t bytes_malloced = 0;
 
 //change to alter behavior:
-static size_t split_threshold = 1000;
-static size_t coalesce_threshold = 10000;
+static size_t split_threshold = 100;
+static size_t coalesce_threshold = 1000;
 
 
 void remove_free(meta_t* to_remove){
@@ -64,14 +65,14 @@ void remove_free(meta_t* to_remove){
 }
 
 void coalesce_two(meta_t* prev, meta_t* current){
-    if(((void*)(prev + 1)) + prev->size +sizeof(btag) != (void*)current){
+    if(prev->data + prev->size +sizeof(btag) != (char*)current){
         return;
     }
     if(prev->free != 1 || current->free != 1){
         return;
     }
     prev->size += current->size + sizeof(meta_t) + sizeof(btag);
-    btag* tag = ((void*)(prev + 1)) + prev->size; 
+    btag* tag = (btag*)(prev->data + prev->size); 
     tag->size = prev->size;
     remove_free(current);
     //prev->next = NULL;
@@ -84,7 +85,7 @@ void coalesce_me(meta_t* me){
     //printf("meta_t size: %lu\n", sizeof(meta_t));
     //printf("ptr: %p\n", (void*)(me + 1));
     btag* prev_tag;
-    meta_t* next = ((void*)(me + 1)) + me->size +sizeof(btag);
+    meta_t* next = (meta_t*)(me->data + me->size +sizeof(btag));
     //printf("next: %p\n", next);
     if(((void*)next) >= lower_limit){
         next = NULL;
@@ -138,13 +139,13 @@ void split_me(meta_t* me, size_t size){
     }
     size_t new_size = (me->size) - size - sizeof(meta_t) - sizeof(btag);
     me->size = size;
-    btag* me_tag = (btag*)(((void*)(me + 1)) + me->size);
+    btag* me_tag = (btag*)(me->data + me->size);
     me_tag->size = size;
 
     meta_t* split = ((void*)me_tag) + sizeof(btag);
     split->free=1;
     split->size= new_size;
-    btag* split_tag = (btag*)(((void*)(split + 1)) + new_size);
+    btag* split_tag = (btag*)(split->data + new_size);
     split_tag->size= split->size;
     split->prev = NULL;
     split->next= head_available;
@@ -159,13 +160,13 @@ void* get_new_space(size_t size){
     //fprintf(output, "making space\n");
     meta_t* chosen = sbrk(0);
     //sbrk didn't give us more space :(
-    if(sbrk((size + sizeof(meta_t) + sizeof(btag)) * 1) == (void*)-1){
+    if(sbrk(size + sizeof(meta_t) + sizeof(btag)) == (void*)-1){
         return NULL;
     }
     chosen->size = size;
     chosen->free = 0;
     chosen->next = NULL;
-    btag* chosen_tag = ((void*)(chosen + 1)) + size;
+    btag* chosen_tag = (btag*)(chosen->data+ size);
     chosen_tag->size = size;
     // meta_t* new_entry = ((void*)chosen_tag) + sizeof(btag);
     // new_entry->size = size;
@@ -181,7 +182,7 @@ void* get_new_space(size_t size){
     lower_limit = (void*)(chosen_tag+1);
     chosen->prev= NULL;
     //head_used = chosen;
-    return (void*)(chosen + 1);
+    return chosen->data;
 }
 
 /**
@@ -268,7 +269,7 @@ void *malloc(size_t size) {
         }
         remove_free(chosen);
         //remove_frees(chosen);
-        return (void*)(chosen+1);
+        return (void*)(chosen->data);
     }
     //no space found: make space!!
     return get_new_space(size);
@@ -340,7 +341,7 @@ void free(void *ptr) {
 // }
 
 void* check_right_space(meta_t* me, size_t target){
-    meta_t* next = ((void*)(me + 1)) + me->size +sizeof(btag);
+    meta_t* next = (meta_t*)(me->data + me->size +sizeof(btag));
     // printf("next: %p\n", next);
     // printf("next ptr: %p\n", ((void*)(next + 1)));
     if(((void*)next) >= lower_limit){
@@ -362,11 +363,11 @@ void* check_right_space(meta_t* me, size_t target){
     }
     // printf("attempts to use neighbor\n");
     me->size += sizeof(meta_t) + sizeof(btag) + next->size;
-    btag* me_tag = ((void*)(me + 1)) + me->size;
+    btag* me_tag = (btag*)(me->data + me->size);
     me_tag->size = me->size;
     remove_free(next);
     split_me(me, target);
-    return (void*)(me + 1); 
+    return me->data; 
 }
 
 /**

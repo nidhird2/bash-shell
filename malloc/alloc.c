@@ -27,9 +27,9 @@ static int first = 1;
 static size_t bytes_malloced = 0;
 
 //change to alter behavior:
-static size_t split_threshold = 100;
-static size_t coalesce_threshold = 1000;
-
+static size_t split_threshold = 50;
+static size_t coalesce_threshold = 10000;
+//static size_t double_threshold = 100;
 
 void remove_free(meta_t* to_remove){
     // meta_t* current = head_available;
@@ -155,7 +155,39 @@ void split_me(meta_t* me, size_t size){
     head_available = split;
 }
 
+// void* get_double_new_space(size_t size){
+//     bytes_malloced += (2*size);
+//     meta_t* chosen = sbrk(0);
+//     if(sbrk((size + sizeof(meta_t) + sizeof(btag))*2) == (void*)-1){
+//         return NULL;
+//     }
+//     chosen->size = size;
+//     chosen->free = 0;
+//     chosen->next = NULL;
+//     chosen->prev= NULL;
+//     btag* chosen_tag = (btag*)(chosen->data+ size);
+//     chosen_tag->size = size;
+//     meta_t* new_entry = ((void*)chosen_tag) + sizeof(btag);
+//     new_entry->size = size;
+//     new_entry->free = 1;
+//     new_entry->next = head_available;
+//     new_entry->prev = NULL;
+//     btag* new_tag = ((void*)(new_entry+ 1)) + size;
+//     new_tag->size = size;
+//     head_available = new_entry;
+
+//     if(first){
+//         first = 0;
+//         limit = chosen;
+//     }
+//     lower_limit = (void*)(chosen_tag+1);
+//     return chosen->data;
+// }
+
 void* get_new_space(size_t size){
+    // if(size <= double_threshold){
+    //     return get_double_new_space(size);
+    // }
     bytes_malloced += (1*size);
     //fprintf(output, "making space\n");
     meta_t* chosen = sbrk(0);
@@ -166,6 +198,7 @@ void* get_new_space(size_t size){
     chosen->size = size;
     chosen->free = 0;
     chosen->next = NULL;
+    chosen->prev= NULL;
     btag* chosen_tag = (btag*)(chosen->data+ size);
     chosen_tag->size = size;
     // meta_t* new_entry = ((void*)chosen_tag) + sizeof(btag);
@@ -180,7 +213,6 @@ void* get_new_space(size_t size){
         limit = chosen;
     }
     lower_limit = (void*)(chosen_tag+1);
-    chosen->prev= NULL;
     //head_used = chosen;
     return chosen->data;
 }
@@ -370,6 +402,25 @@ void* check_right_space(meta_t* me, size_t target){
     return me->data; 
 }
 
+void* add_more_realloc_space(meta_t* me, size_t target){
+    meta_t* next = (meta_t*)(me->data + me->size +sizeof(btag));
+    //printf("next: %p\n", next);
+    if(((void*)next) < lower_limit){
+        return NULL;
+    }
+    size_t needed = target - me->size;
+    if(sbrk(needed) == ((void*)-1)){
+        return NULL;
+    }
+    me->size = target;
+    btag* me_tag = (btag*)(me->data + me->size);
+    me_tag->size = me->size;
+    lower_limit = (void*)(me_tag+1);
+    return me->data;
+
+    
+}
+
 /**
  * Reallocate memory block
  *
@@ -433,17 +484,22 @@ void *realloc(void *ptr, size_t size) {
     //     return malloc(size);
     // }
     if(met->size >= size){
-        split_me(met, size);
+        //split_me(met, size);
         return ptr;
     }
     //void* res = NULL;
     //printf("ptr:%p\n", ptr);
     //void* res = NULL;
     void* res = check_right_space(met, size);
-    if(res == NULL){
-        res = malloc(size);
-        memcpy(res,ptr,(int)fmin(size, met->size));
-        free(ptr);
+    if(res != NULL){
+        return res;
     }
+    res = add_more_realloc_space(met, size);
+    if(res != NULL){
+        return res;
+    }
+    res = malloc(size);
+    memcpy(res,ptr,(int)fmin(size, met->size));
+    free(ptr);
     return res;
 }

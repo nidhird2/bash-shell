@@ -35,18 +35,67 @@ struct queue {
 
 queue *queue_create(ssize_t max_size) {
     /* Your code here */
-    return NULL;
+    queue* result = (queue*)malloc(sizeof(queue));
+    result->max_size = max_size;
+    result->size = 0;
+    result->head = NULL;
+    result->tail = NULL;
+    pthread_cond_init(&(result->cv), NULL);
+    pthread_mutex_init(&(result->m), NULL);
+    return result;
 }
 
 void queue_destroy(queue *this) {
     /* Your code here */
+    queue_node* current = this->head;
+    queue_node* temp;
+    while(current != NULL){
+        temp = current;
+        current = current->next;
+        free(temp);
+    }
+    pthread_mutex_destroy(&(this->m));
+    pthread_cond_destroy(&(this->cv));
 }
 
 void queue_push(queue *this, void *data) {
     /* Your code here */
+    pthread_mutex_lock(&this->m);
+    while(this->size == this->max_size){
+        pthread_cond_wait(&(this->cv), &(this->m));
+    }
+    queue_node* new = (queue_node*)malloc(sizeof(queue_node));
+    new->data = data;
+    new->next = NULL;
+    if(this->tail != NULL){
+        this->tail->next = new;
+    }
+    else{
+        this->head = new;
+    }
+    this->tail = new;
+    this->size++;
+    if(this->size == 1){
+        pthread_cond_broadcast(&this->cv);
+    }
+    pthread_mutex_unlock(&this->m);
 }
 
 void *queue_pull(queue *this) {
     /* Your code here */
-    return NULL;
+    pthread_mutex_lock(&this->m);
+    while(this->size == 0){
+        pthread_cond_wait(&(this->cv), &(this->m));
+    }
+    void* result = this->head->data;
+    queue_node* temp = this->head->next;
+    free(this->head);
+    this->head = temp;
+    this->size--;
+
+    if(this->size == this->max_size - 1){
+        pthread_cond_broadcast(&this->cv);
+    }
+    pthread_mutex_unlock(&this->m);    
+    return result;
 }

@@ -14,7 +14,10 @@
  *
  */
 void semm_init(Semamore *s, int value, int max_val) {
-    /* Your code here */
+    s->value = value;
+    s->max_val = max_val;
+    pthread_cond_init(&(s->cv), NULL);
+    pthread_mutex_init(&(s->m), NULL);
 }
 
 /**
@@ -22,7 +25,15 @@ void semm_init(Semamore *s, int value, int max_val) {
  *  Otherwise, should decrement the value.
  */
 void semm_wait(Semamore *s) {
-    /* Your code here */
+    pthread_mutex_lock(&(s->m));
+    while(s->value == 0){
+        pthread_cond_wait(&(s->cv), &(s->m));
+    }
+    s->value--;
+    if(s->value == s->max_val - 1){
+        pthread_cond_broadcast(&s->cv);
+    }
+    pthread_mutex_unlock(&(s->m));
 }
 
 /**
@@ -32,6 +43,16 @@ void semm_wait(Semamore *s) {
  */
 void semm_post(Semamore *s) {
     /* Your code here */
+    pthread_mutex_lock(&s->m);
+    while(s->value == s->max_val){
+        pthread_cond_wait(&(s->cv), &(s->m));
+    }
+    s->value++;
+    if(s->value == 1){
+        pthread_cond_broadcast(&s->cv);
+    }
+  /* A woken thread must acquire the lock, so it will also have to wait until we call unlock*/
+    pthread_mutex_unlock(&s->m);
 }
 
 /**
@@ -41,4 +62,6 @@ void semm_post(Semamore *s) {
  */
 void semm_destroy(Semamore *s) {
     /* Your code here */
+    pthread_mutex_destroy(&(s->m));
+    pthread_cond_destroy(&(s->cv));
 }

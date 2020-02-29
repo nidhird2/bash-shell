@@ -93,7 +93,7 @@ void *queue_pull(queue *this) {
     this->head = temp;
     this->size--;
 
-    if(this->size == this->max_size - 1){
+    if(this->size  + 1 == this->max_size){
         pthread_cond_broadcast(&this->cv);
     }
     pthread_mutex_unlock(&this->m);    

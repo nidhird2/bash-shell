@@ -60,13 +60,18 @@ void queue_destroy(queue *this) {
 
 void queue_push(queue *this, void *data) {
     /* Your code here */
-    pthread_mutex_lock(&this->m);
-    while(this->size == this->max_size){
-        pthread_cond_wait(&(this->cv), &(this->m));
-    }
     queue_node* new = (queue_node*)malloc(sizeof(queue_node));
     new->data = data;
     new->next = NULL;
+
+    pthread_mutex_lock(&this->m);
+    //check if queue is bounded before blocking
+    if(this->max_size > 0){
+        while(this->size == this->max_size){
+            pthread_cond_wait(&(this->cv), &(this->m));
+        }
+    }
+
     if(this->tail != NULL){
         this->tail->next = new;
     }

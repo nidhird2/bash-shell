@@ -28,8 +28,8 @@ static size_t bytes_malloced = 0;
 
 //change to alter behavior:
 static size_t split_threshold = 50;
-static size_t coalesce_threshold = 10000;
-static size_t double_threshold = 100;
+static size_t coalesce_threshold = 100;
+static size_t double_threshold = 1;
 
 void remove_free(meta_t* to_remove){
     // meta_t* current = head_available;
@@ -496,6 +496,7 @@ void *realloc(void *ptr, size_t size) {
     }
     res = add_more_realloc_space(met, size);
     if(res != NULL){
+        split_me(met, size);
         return res;
     }
     res = malloc(size);

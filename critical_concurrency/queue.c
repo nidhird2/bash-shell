@@ -56,6 +56,8 @@ void queue_destroy(queue *this) {
     }
     pthread_mutex_destroy(&(this->m));
     pthread_cond_destroy(&(this->cv));
+    free(this);
+    this = NULL;
 }
 
 void queue_push(queue *this, void *data) {
@@ -96,9 +98,12 @@ void *queue_pull(queue *this) {
     queue_node* temp = this->head->next;
     free(this->head);
     this->head = temp;
+    if(this->size == 1){
+        this->tail = NULL;
+    }
     this->size--;
 
-    if(this->size  + 1 == this->max_size){
+    if(this->size + 1 == this->max_size){
         pthread_cond_broadcast(&this->cv);
     }
     pthread_mutex_unlock(&this->m);    

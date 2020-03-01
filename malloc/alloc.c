@@ -20,6 +20,8 @@ typedef struct _boundary_tag{
     size_t size;
 } btag;
 
+void* add_more_malloc_space(size_t);
+
 static void* limit = NULL;
 static void* lower_limit = NULL;
 static meta_t* head_available = NULL;
@@ -31,22 +33,22 @@ static size_t split_threshold = 50;
 static size_t coalesce_threshold = 100;
 static size_t double_threshold = 1;
 
+
+/**
+ * Returns ptr to last space in meta_t, none
+*/
+meta_t* get_last_meta(){
+    if(first){
+        return NULL;
+    }
+    btag* last_tag = ((btag*)lower_limit) - 1;
+    //(meta_t*)(((char*)prev_tag) - (prev_tag->size) - sizeof(meta_t)); 
+    meta_t* last_created =  (meta_t*)(((char*)last_tag) - (last_tag->size) - sizeof(meta_t)); 
+    return last_created;
+}
+
+
 void remove_free(meta_t* to_remove){
-    // meta_t* current = head_available;
-    // meta_t* prev_free = NULL;
-    // while(current != NULL){
-    //     if(to_remove == current){
-    //         if(prev_free != NULL){
-    //             prev_free->next = to_remove->next;
-    //         }
-    //         else{
-    //             head_available = to_remove->next;
-    //         }
-    //         break;
-    //     }
-    //     prev_free = current;
-    //     current = current->next;
-    // }
     if(to_remove->free == 0){
         return;
     }
@@ -286,11 +288,11 @@ void *malloc(size_t size) {
         if(p->free && p->size >= size){
             if(chosen == NULL || p->size < chosen->size){
                 chosen =  p;
+                //break;
+            }
+            if(p->size == chosen->size){
                 break;
             }
-            // if(p->size == chosen->size){
-            //     break;
-            // }
         }
         p = p->next;
     }
@@ -303,8 +305,12 @@ void *malloc(size_t size) {
         //remove_frees(chosen);
         return (void*)(chosen->data);
     }
-    //no space found: make space!!
-    return get_new_space(size);
+    void* res = add_more_malloc_space(size);
+    if(res == NULL){
+        //no space found: make space!!
+        return get_new_space(size);
+    }
+    return res;
 }
 
 /**
@@ -402,6 +408,26 @@ void* check_right_space(meta_t* me, size_t target){
     return me->data; 
 }
 
+void* add_more_malloc_space(size_t target){
+    meta_t* last_created = get_last_meta();
+    if(last_created == NULL){
+        return NULL;
+    }
+    if(last_created->free == 0){
+        return NULL;
+    }
+    size_t needed = target - last_created->size;
+    if(sbrk(needed) == ((void*)-1)){
+        return NULL;
+    }
+    last_created->size = target;
+    btag* last_tag = (btag*)(last_created->data + target);
+    last_tag->size = target;
+    lower_limit = (void*)(last_tag+1);
+    remove_free(last_created);
+    return last_created->data;
+}
+
 void* add_more_realloc_space(meta_t* me, size_t target){
     meta_t* next = (meta_t*)(me->data + me->size +sizeof(btag));
     //printf("next: %p\n", next);
@@ -413,12 +439,10 @@ void* add_more_realloc_space(meta_t* me, size_t target){
         return NULL;
     }
     me->size = target;
-    btag* me_tag = (btag*)(me->data + me->size);
-    me_tag->size = me->size;
+    btag* me_tag = (btag*)(me->data + target);
+    me_tag->size = target;
     lower_limit = (void*)(me_tag+1);
-    return me->data;
-
-    
+    return me->data;   
 }
 
 /**

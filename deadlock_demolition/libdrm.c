@@ -104,7 +104,7 @@ drm_t *drm_init() {
         g = shallow_graph_create();
     }
     drm_t* result = malloc(sizeof(drm_t));
-    printf("drm vtx: %p\n", result);
+    //printf("new drm vtx: %p\n", result);
     pthread_mutex_init(&result->m, NULL);
     graph_add_vertex(g, result);
     pthread_mutex_unlock(&m);
@@ -113,7 +113,7 @@ drm_t *drm_init() {
 
 int drm_post(drm_t *drm, pthread_t *thread_id) {
     pthread_mutex_lock(&m);
-    printf("unlock request- drm: %p thread: %p\n", drm, thread_id);
+    //printf("unlock request- drm: %p thread: %p\n", drm, thread_id);
     /* Your code here */
     if(!graph_contains_vertex(g, thread_id)){
         pthread_mutex_unlock(&m);
@@ -134,11 +134,11 @@ int drm_post(drm_t *drm, pthread_t *thread_id) {
 
 int drm_wait(drm_t *drm, pthread_t *thread_id) {
     pthread_mutex_lock(&m);
-    printf("lock request- drm: %p thread: %p\n", drm, thread_id);
+    //printf("lock request- drm: %p thread: %p\n", drm, thread_id);
     /* Your code here */
     //check if thread exists in graph
     if(!graph_contains_vertex(g, thread_id)){
-        printf("thread vtx: %p\n", thread_id);
+        //printf("new thread vtx: %p\n", thread_id);
         graph_add_vertex(g, thread_id);
     }
     //check if thread owns the mutex already and return early
@@ -151,19 +151,17 @@ int drm_wait(drm_t *drm, pthread_t *thread_id) {
     graph_add_edge(g, thread_id, drm);
     //check circular wait
     if(check_if_circular()){
-        printf("circular graph!\n");
+        //printf("circular graph!\n");
         graph_remove_edge(g, thread_id, drm);
         pthread_mutex_unlock(&m);
         return 1;
     }
-    printf("no circular wait!\n");
+    //printf("no circular wait!\n");
     //lock if no circular wait
-    //printf("about to lock!\n");
-    pthread_mutex_unlock(&m);
     while(graph_vertex_degree(g, drm) >= 1){
         pthread_cond_wait(&cv, &m);
     }
-    printf("about to lock!\n");
+    //printf("about to lock!\n");
     pthread_mutex_lock(&drm->m);
     //change graph 
     graph_remove_edge(g, thread_id, drm);

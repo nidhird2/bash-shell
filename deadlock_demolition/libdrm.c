@@ -5,12 +5,15 @@
 #include "graph.h"
 #include "libdrm.h"
 #include "set.h"
+#include "queue.h"
+#include <stdio.h>
 #include <pthread.h>
 
 // You probably will need some global variables here to keep track of the
 // resource allocation graph.
 graph* g;
 pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
 
 struct drm_t {
     // Declare your struct's variables here. Think about what you will need.
@@ -18,9 +21,73 @@ struct drm_t {
     pthread_mutex_t m;
 };
 
+//O is FALSE
+//1 IS TRUE
+
+int recCyclic(void* v, dictionary* visited, dictionary* recStack){
+    //printf("current: %p\n", vertex);
+    int f = 0;
+    int t = 1;
+    if(*(int*)dictionary_get(visited, v) == false){
+        //update rec status
+        dictionary_set(visited, v, &t);
+        dictionary_set(recStack, v, &t);
+
+        //check adj neighbors
+        vector* neigh = graph_neighbors(g, v);
+        size_t neigh_length = vector_size(neigh);
+        for(size_t i = 0; i < neigh_length; i++){
+            void* current = vector_get(neigh, i);
+            int if_visited = *(int*)dictionary_get(visited, current);
+            int if_rec = *(int*)dictionary_get(recStack, current);
+
+            if(if_visited == false && recCyclic(current, visited, recStack)){
+                vector_destroy(neigh);
+                return true;
+            }
+            else if(if_rec == true){
+                vector_destroy(neigh);
+                return true;
+            }
+        }
+        vector_destroy(neigh);
+    }
+    dictionary_set(recStack, v, &f);
+    return false;
+}
+
 
 int check_if_circular(void){
-    return 0;
+    vector * vertexes = graph_vertices(g);
+    size_t num_verticies = vector_size(vertexes);
+    //cycle detection algo from: 
+    //https://www.geeksforgeeks.org/detect-cycle-in-a-directed-graph-using-bfs/
+    dictionary* visited = shallow_to_int_dictionary_create();
+    dictionary* recStack = shallow_to_int_dictionary_create();
+    int f = 0;
+    //printf("num vertexes: %lu\n", num_verticies);
+    for(size_t i = 0; i < num_verticies; i++){
+        void* current_vertex = vector_get(vertexes, i);
+        //printf("current vertex: %p\n", current_vertex);
+        dictionary_set(visited, current_vertex, &f);
+        dictionary_set(recStack, current_vertex, &f);
+        //mint* val = (int*)dictionary_get(recStack, current_vertex);
+        //printf("val* is: %p\n", val);
+        //printf("val is: %d\n", *val);
+    }
+    for(size_t i = 0; i < num_verticies; i++){
+        void* current_vertex = vector_get(vertexes, i);
+        if(recCyclic(current_vertex, visited, recStack)){
+            dictionary_destroy(visited);
+            dictionary_destroy(recStack);
+            vector_destroy(vertexes);
+            return true;
+        }
+    }
+    dictionary_destroy(visited);
+    dictionary_destroy(recStack);
+    vector_destroy(vertexes);
+    return false;
 }
 
 int check_if_edge_exists(void* source, void* dest){
@@ -37,6 +104,7 @@ drm_t *drm_init() {
         g = shallow_graph_create();
     }
     drm_t* result = malloc(sizeof(drm_t));
+    //printf("drm vtx: %p\n", result);
     pthread_mutex_init(&result->m, NULL);
     graph_add_vertex(g, result);
     pthread_mutex_unlock(&m);
@@ -45,6 +113,7 @@ drm_t *drm_init() {
 
 int drm_post(drm_t *drm, pthread_t *thread_id) {
     pthread_mutex_lock(&m);
+    //printf("unlock request- drm: %p thread: %p\n", drm, thread_id);
     /* Your code here */
     if(!graph_contains_vertex(g, thread_id)){
         pthread_mutex_unlock(&m);
@@ -62,9 +131,11 @@ int drm_post(drm_t *drm, pthread_t *thread_id) {
 
 int drm_wait(drm_t *drm, pthread_t *thread_id) {
     pthread_mutex_lock(&m);
+    //printf("lock request- drm: %p thread: %p\n", drm, thread_id);
     /* Your code here */
     //check if thread exists in graph
     if(!graph_contains_vertex(g, thread_id)){
+        //printf("thread vtx: %p\n", thread_id);
         graph_add_vertex(g, thread_id);
     }
     //check if thread owns the mutex already and return early
@@ -77,14 +148,17 @@ int drm_wait(drm_t *drm, pthread_t *thread_id) {
     graph_add_edge(g, thread_id, drm);
     //check circular wait
     if(check_if_circular()){
+        //printf("circular graph!\n");
         graph_remove_edge(g, thread_id, drm);
         pthread_mutex_unlock(&m);
         return 1;
     }
 
     //lock if no circular wait
+    //printf("about to lock!\n");
+    pthread_mutex_unlock(&m);
     pthread_mutex_lock(&drm->m);
-    
+    pthread_mutex_lock(&m);
     //change graph 
     graph_remove_edge(g, thread_id, drm);
     graph_add_edge(g, drm, thread_id);
@@ -94,10 +168,10 @@ int drm_wait(drm_t *drm, pthread_t *thread_id) {
 
 void drm_destroy(drm_t *drm) {
     /* Your code here */
+    pthread_mutex_lock(&m);
     pthread_mutex_destroy(&drm->m);
     free(drm);
     //remove from graph
-    pthread_mutex_lock(&m);
     graph_remove_vertex(g, drm);
     pthread_mutex_unlock(&m);
     return;

@@ -107,14 +107,10 @@ drm_t *drm_init() {
 int drm_post(drm_t *drm, pthread_t *thread_id) {
     pthread_mutex_lock(&m);
     //printf("unlock request- drm: %p thread: %p\n", drm, thread_id);
-    /* Your code here */
-    if(!graph_contains_vertex(g, thread_id)){
+    //if node or edge doesn't exist -> unable to unlock, return early
+    if(!graph_contains_vertex(g, thread_id) || !graph_adjacent(g, drm, thread_id)){
         pthread_mutex_unlock(&m);
-        return 1;
-    }
-    if(!graph_adjacent(g, drm, thread_id)){
-        pthread_mutex_unlock(&m);
-        return 1;
+        return 0;
     }
     graph_remove_edge(g, drm, thread_id);
     pthread_mutex_unlock(&drm->m);
@@ -122,13 +118,12 @@ int drm_post(drm_t *drm, pthread_t *thread_id) {
         pthread_cond_broadcast(&cv);
     }
     pthread_mutex_unlock(&m);
-    return 0;
+    return 1;
 }
 
 int drm_wait(drm_t *drm, pthread_t *thread_id) {
     pthread_mutex_lock(&m);
     //printf("lock request- drm: %p thread: %p\n", drm, thread_id);
-    /* Your code here */
     //check if thread exists in graph
     if(!graph_contains_vertex(g, thread_id)){
         //printf("new thread vtx: %p\n", thread_id);
@@ -137,7 +132,7 @@ int drm_wait(drm_t *drm, pthread_t *thread_id) {
     //check if thread owns the mutex already and return early
     if(graph_adjacent(g, drm, thread_id)){
         pthread_mutex_unlock(&m);
-        return 1;
+        return 0;
     }
 
     //add edge to graph

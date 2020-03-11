@@ -28,7 +28,6 @@ void cleanup(){
 
 int crack_one(char* crypt, struct crypt_data* cdata, int thread_idx){
     // printf("crypt: %s\n", crypt);
-    const char* salt = "xx";
     char username[9];
     char hash[14];
     char known_pass[9];
@@ -37,33 +36,29 @@ int crack_one(char* crypt, struct crypt_data* cdata, int thread_idx){
     free(crypt);
     double before_time = getThreadCPUTime();
     v1_print_thread_start(thread_idx, username);
-    char* loc = strstr(known_pass, ".");
-    if(loc == NULL){
+    int known_pass_chars = getPrefixLength(known_pass);
+    int password_length = strlen(known_pass);
+    //char* loc = strstr(known_pass, ".");
+    if(known_pass_chars == password_length){
         double time_elp = getThreadCPUTime() - before_time;
         v1_print_thread_result(thread_idx, username, known_pass, hash_count, time_elp, 0);
         return 1;
     }
-    int password_length = strlen(known_pass);
-    int known_pass_chars = loc - known_pass;
     int unknown_chars = password_length - known_pass_chars;
     char* pass_guess = (char*)malloc(9);
-    size_t offset = 0;
+    //size_t offset = 0;
     //copys known part of password into guess
-    while(known_pass + offset != loc){
-        pass_guess[offset] = known_pass[offset];
-        offset++;
-    }
+    memcpy(pass_guess, known_pass, known_pass_chars);
     for(int i = known_pass_chars; i < password_length; i++){
         pass_guess[i] = 'a';
     }
     pass_guess[password_length] = '\0';
-    // printf("username: %s\n", username);
-    // printf("hash: %s\n", hash);
-    // printf("known pass: %s\n", known_pass);
     //starts iterations
-    int total_it = (int)pow(26, unknown_chars);
-    for(int i = 0; i < total_it; i++){
-        //printf("pass_guess: %s\n", pass_guess);
+    long total_it = (long)pow(26, unknown_chars);
+    printf("total_it: %ld\n", total_it);
+    printf("pass guess: %s\n", pass_guess);
+    const char* salt = "xx";
+    for(long i = 0; i < total_it; i++){
         char* result_hash = crypt_r(pass_guess, salt, cdata);
         hash_count++;
         if(strcmp(hash, result_hash) == 0){
@@ -72,28 +67,7 @@ int crack_one(char* crypt, struct crypt_data* cdata, int thread_idx){
             free(pass_guess);
             return 1;
         }
-        //update pass to new guess
-        // for(int j = known_pass_chars + 1; j < 8; j++){
-        //     if(pass_guess[j] == 'z'){
-        //         pass_guess[j - 1]++;
-        //         for(int k = j; k < 8; k++){
-        //             pass_guess[k] = 'a';
-        //         }
-        //         break;
-        //     }
-        //     else if(j == 7){
-        //         pass_guess[j]++;
-        //     }
-        // }
-        for(int j = password_length - 1; j >= known_pass_chars; j--){
-            if(pass_guess[j] != 'z'){
-                pass_guess[j]++;
-                break;
-            }
-            else{
-                pass_guess[j] = 'a';
-            }
-        }
+        incrementString(pass_guess);        
     }
     //pass not found
     double time_elp = getThreadCPUTime() - before_time;

@@ -55,8 +55,8 @@ int crack_one(char* crypt, struct crypt_data* cdata, int thread_idx){
     pass_guess[password_length] = '\0';
     //starts iterations
     long total_it = (long)pow(26, unknown_chars);
-    printf("total_it: %ld\n", total_it);
-    printf("pass guess: %s\n", pass_guess);
+    //printf("total_it: %ld\n", total_it);
+    //printf("pass guess: %s\n", pass_guess);
     const char* salt = "xx";
     for(long i = 0; i < total_it; i++){
         char* result_hash = crypt_r(pass_guess, salt, cdata);

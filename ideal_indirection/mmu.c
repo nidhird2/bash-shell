@@ -43,10 +43,34 @@ page_table_entry* find_pte(mmu* this, addr32 virtual_address, size_t pid){
     // printf("offset value: %X\n", calc_offset(virtual_address));
     //check if pid is same before checking tlb
     if(pid == this->curr_pid){
-        page_table_entry* result = tlb_get_pte(&(this->tlb), base_virtual);
-        if(result != NULL){
+        page_table_entry* pg_table_entry = tlb_get_pte(&(this->tlb), base_virtual);
+        if(pg_table_entry != NULL){
             //result_buffer = result;
-            return result;
+            //printf("present: %d\n", pg_table_entry->present);
+            if(pg_table_entry->present == 0){
+                //printf("GOT HERE\n");
+                mmu_raise_page_fault(this);
+                //ask_kernel_for_frame(pg_table_entry);
+                //page_table_entry* pg_table_entry = (page_table_entry)
+                //@TODO:fill in flags in pg_table_entry
+                pg_table_entry->base_addr = (ask_kernel_for_frame(pg_table_entry) >> NUM_OFFSET_BITS);
+                pg_table_entry->user_supervisor = true;
+                pg_table_entry->dirty = 0;
+                pg_table_entry->accessed = 0;
+                pg_table_entry->present = 1;
+                pg_table_entry->read_write = 0;
+                vm_segmentation* segm = find_segment(this->segmentations[pid], virtual_address);
+                if(segm->permissions && (segm->permissions & WRITE) != 0){
+                        pg_table_entry->read_write = 1;
+                    }
+                //pg_table_entry.cache_disabled = 1;
+                //pg_table_entry.write_through = 1;
+                //pg_table_entry.available = 3;
+                //pg_table_entry.global_page = 1;
+                //pg_table_entry.page_table_attribute_index = 1;
+                read_page_from_disk(pg_table_entry);
+            }
+            return pg_table_entry;
         }
         // else{
         //     mmu_tlb_miss(this);
@@ -59,7 +83,7 @@ page_table_entry* find_pte(mmu* this, addr32 virtual_address, size_t pid){
     }
     //check if invalid virtual address
     if(!address_in_segmentations(this->segmentations[pid], virtual_address)){
-        printf("NOT IN SEGM\n");
+        //printf("NOT IN SEGM\n");
         mmu_raise_segmentation_fault(this);
         //result_buffer = NULL;
         return NULL;
@@ -69,7 +93,7 @@ page_table_entry* find_pte(mmu* this, addr32 virtual_address, size_t pid){
     page_table* pg_table = (page_table*)get_system_pointer_from_pde(&pd_entry);
     //@TODO: if table does not exist
     if(pg_table == NULL){
-        printf("PAGE TABLE D N E\n");
+        //printf("PAGE TABLE D N E\n");
         mmu_raise_page_fault(this);
         //result_buffer = NULL;
         pd_entry.base_addr = (ask_kernel_for_frame(NULL) >> NUM_OFFSET_BITS);
@@ -94,20 +118,20 @@ page_table_entry* find_pte(mmu* this, addr32 virtual_address, size_t pid){
         pg_table_entry->present = true;
         pg_table_entry->read_write = true;
         pg_table_entry->user_supervisor = true;
-        pg_table_entry->accessed = true;
+        pg_table_entry->accessed = 0;
         //return pg_table_entry;
     }
     //check if not currently mapped to physical memory
     if(pg_table_entry->present == 0){
-        printf("GOT HERE\n");
+        //printf("GOT HERE\n");
         mmu_raise_page_fault(this);
-        ask_kernel_for_frame(pg_table_entry);
+        //ask_kernel_for_frame(pg_table_entry);
         //page_table_entry* pg_table_entry = (page_table_entry)
         //@TODO:fill in flags in pg_table_entry
+        pg_table_entry->base_addr = (ask_kernel_for_frame(pg_table_entry) >> NUM_OFFSET_BITS);
         pg_table_entry->user_supervisor = true;
-        pg_table_entry->base_addr = (base_virtual >> 12);
         pg_table_entry->dirty = 0;
-        pg_table_entry->accessed = 1;
+        pg_table_entry->accessed = 0;
         pg_table_entry->present = 1;
         pg_table_entry->read_write = 0;
         vm_segmentation* segm = find_segment(this->segmentations[pid], virtual_address);
@@ -144,6 +168,8 @@ void mmu_read_from_virtual_address(mmu *this, addr32 virtual_address,
     result->accessed = 1;
     size_t offset = calc_offset(virtual_address);
     void* ptr = get_system_pointer_from_pte(result);
+    //printf("present: %d\n", result->present);
+    //printf("ptr val: %p\n", ptr);
     ptr = ((char*)ptr) + offset;
     memmove((char*)buffer, (char*)ptr, num_bytes);
     return;

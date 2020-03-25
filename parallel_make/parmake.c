@@ -12,12 +12,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <sys/wait.h>
+#include <time.h>
+
+
 
 graph* g;
 queue* q;
+int FAILED = -1;
+int COMPLETED = 1;
+int INCOMPLETE = 0;
 
 void cleanup(){
+    queue_destroy(q);
     graph_destroy(g);
 }
 
@@ -37,15 +46,15 @@ int recursor(char* target, set* visited, set* recStack,vector* commands){
         for(size_t i = 0; i < dep_length; i++){
             char* current = (char*)vector_get(dependencies, i);
             if(!set_contains(visited, current) && recursor(current, visited, recStack, commands)){
-                free(dependencies);
+                vector_destroy(dependencies);
                 return 1;
             }   
             else if(set_contains(recStack, current)){
-                free(dependencies);
+                vector_destroy(dependencies);
                 return 1;
             }
         }   
-        free(dependencies);
+        vector_destroy(dependencies);
         vector_push_back(commands, target);
     }
     set_remove(recStack, target);
@@ -63,50 +72,110 @@ vector* get_command_list(char* target){
         //print_str_vector(commands);
         vector_destroy(commands);
         set_destroy(visited);
+        set_destroy(recStack);
         return NULL;
     }
     set_destroy(visited);
+    set_destroy(recStack);
     return commands;
 }
 
 
 
 void* compute(void* input){
-    char* target = queue_pull(q);
+    char* target = (char*)input;
     vector* targets = get_command_list(target);
     if(targets == NULL){
         print_cycle_failure(target);
         return NULL;
     }
+    //printf("input: %s\n", target);
     for(size_t i = 0; i < vector_size(targets); i++){
         char* current = (char*)vector_get(targets, i);
-        //printf("%lu: %s\n", i, current);
+        //printf("current: %s\n", current);
         rule_t * rule = (rule_t *)graph_get_vertex_value(g, current);
-        //if rule's child dependencies have failed
-        if(rule->state == -1){
-            vector* antin = graph_antineighbors(g, current);
-            for(size_t k = 0; k < vector_size(antin); k++){
-                    rule_t * rule_k = (rule_t*)graph_get_vertex_value(g, vector_get(antin, k));
-                    rule_k->state = -1;
-            }
-            break;
+        //check if rule has already been processed
+        if(rule->state != INCOMPLETE){
+            continue;
         }
-        for(size_t j = 0; j < vector_size(rule->commands); j++){
-            int return_val = system(vector_get(rule->commands, j));
-            //printf("return val: %d\n", return_val);
-            if(return_val != 0){
-                rule->state = 1;
-                vector* antin = graph_antineighbors(g, current);
-                //mark parents as failed
-                for(size_t k = 0; k < vector_size(antin); k++){
-                    rule_t * rule_k = (rule_t*)graph_get_vertex_value(g, vector_get(antin, k));
-                    rule_k->state = -1;
-                }
+        //check if rule's child dependencies have failed
+        vector* neigh = graph_neighbors(g, current);
+        for(size_t k = 0; k < vector_size(neigh); k++){
+            rule_t * rule_k = (rule_t*)graph_get_vertex_value(g, vector_get(neigh, k));
+            if(rule_k->state == FAILED){
+                rule->state = FAILED;
                 break;
             }
         }
+        if(rule->state == FAILED){
+            continue;
+        }
+        int run_all_commands = 1;
+        //check if file exists on disk:
+        if(access(current, F_OK) == 0){
+            for(size_t j = 0; j < vector_size(rule->commands); j++){
+                //check if rule depends on something NOT on disk
+                if(access(vector_get(rule->commands, j), F_OK) != 0){
+                    run_all_commands = 0;
+                    break;
+                }
+            }
+        }
+        //printf("run all commands: %d\n", run_all_commands);
+        //if all dependencies are files on disk, check modf. times
+        if(run_all_commands == 0){
+            //printf("GOT TO COMPARISON\n");
+            struct stat current_info;
+            stat(current, &current_info);
+            for(size_t j = 0; j < vector_size(rule->commands); j++){
+                struct stat dep_info;
+                stat(vector_get(rule->commands, j), &dep_info);
+                float diff = difftime(dep_info.st_mtime, current_info.st_mtime);
+                // printf("dep time: %s\n", asctime(gmtime(&dep_info.st_mtime)));
+                // printf("rule time: %s\n", asctime(gmtime(&current_info.st_mtime)));
+                // printf("time diff: %f\n", diff);
+                if(diff > 1.0){
+                    run_all_commands = 1;
+                    break;
+                }
+            }
+        }
+        if(!run_all_commands){
+            rule->state = COMPLETED;
+            continue;
+        }
+        //otherwise:
+        for(size_t j = 0; j < vector_size(rule->commands); j++){
+            int return_val = system(vector_get(rule->commands, j));
+            //if command failed
+            if(return_val != 0){
+                rule->state = FAILED;
+                break;
+            }
+        }
+        if(rule->state != FAILED){
+            rule->state = COMPLETED;
+        }
     }
-    free(targets);
+    vector_destroy(targets);
+    return NULL;
+}
+
+char* get_first_target(char* makefile){
+    FILE* f = fopen(makefile, "r");
+    char * line = NULL;
+    size_t len = 0;
+    int read = getline(&line, &len, f);
+    while(read != -1){
+        if(strstr(line, ":") != NULL){
+            char* loc = strstr(line, ":");
+            *loc = '\0';
+            //char* result = strdup(loc);
+            //free(line)
+            return line;
+        }
+        read = getline(&line, &len, f);
+    }
     return NULL;
 }
 
@@ -115,15 +184,28 @@ int parmake(char *makefile, size_t num_threads, char **targets) {
     g = parser_parse_makefile(makefile, targets);
     q = queue_create(-1);
     //graph_setup();
-    int i = 0;
-    char* current = targets[i];
-    while(current != NULL){
-        queue_push(q, current);
-        i++;
-        current = targets[i];
+    if(targets == NULL || targets[0] == NULL || strcmp(targets[0], "")){
+        char* target = get_first_target(makefile);
+        compute(target);
+        free(target);
+        cleanup();
+        return 0;
+    }
+    else{
+        int i = 0;
+        char* current = targets[i];
+        while(current != NULL){
+            queue_push(q, current);
+            i++;
+            current = targets[i];
+        }
     }
     queue_push(q, NULL);
-    compute(NULL);
+    void* t = queue_pull(q);
+    while(t != NULL){
+        compute(t);
+        t = queue_pull(q);
+    }
     cleanup();
     return 0;
 }

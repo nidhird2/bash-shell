@@ -90,8 +90,8 @@ void* compute(void* input){
     //printf("input: %s\n", target);
     for(size_t i = 0; i < vector_size(targets); i++){
         char* current = (char*)vector_get(targets, i);
-        //printf("current: %s\n", current);
         rule_t * rule = (rule_t *)graph_get_vertex_value(g, current);
+        //printf("current: %s\n", current);
         //check if rule has already been processed
         if(rule->state != INCOMPLETE){
             continue;
@@ -105,6 +105,7 @@ void* compute(void* input){
                 break;
             }
         }
+        vector_destroy(neigh);
         if(rule->state == FAILED){
             continue;
         }
@@ -138,7 +139,7 @@ void* compute(void* input){
                 }
             }
         }
-        if(!run_all_commands){
+        if(run_all_commands == 0){
             rule->state = COMPLETED;
             continue;
         }
@@ -159,23 +160,12 @@ void* compute(void* input){
     return NULL;
 }
 
-char* get_first_target(char* makefile){
-    FILE* f = fopen(makefile, "r");
-    char * line = NULL;
-    size_t len = 0;
-    int read = getline(&line, &len, f);
-    while(read != -1){
-        if(strstr(line, ":") != NULL){
-            char* loc = strstr(line, ":");
-            *loc = '\0';
-            //char* result = strdup(loc);
-            //free(line)
-            return line;
-        }
-        read = getline(&line, &len, f);
-    }
-    return NULL;
-}
+// char* get_first_target(char* makefile){
+//     vector* neighbors = graph_neighbors(g, "");
+//     char* result = (char*)vector_pop_back(neighbors);
+//     free(neighbors);
+//     return result;
+// }
 
 int parmake(char *makefile, size_t num_threads, char **targets) {
     // good luck!
@@ -184,9 +174,10 @@ int parmake(char *makefile, size_t num_threads, char **targets) {
     //graph_setup();
     //if targets is NULL or empty, find first
     if(targets == NULL || targets[0] == NULL){
-        char* target = get_first_target(makefile);
+        vector* neighbors = graph_neighbors(g, "");
+        char* target = vector_get(neighbors, 0);
         compute(target);
-        free(target);
+        vector_destroy(neighbors);
         cleanup();
         return 0;
     }

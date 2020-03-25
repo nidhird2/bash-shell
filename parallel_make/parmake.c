@@ -80,8 +80,6 @@ vector* get_command_list(char* target){
     return commands;
 }
 
-
-
 void* compute(void* input){
     char* target = (char*)input;
     vector* targets = get_command_list(target);
@@ -184,7 +182,8 @@ int parmake(char *makefile, size_t num_threads, char **targets) {
     g = parser_parse_makefile(makefile, targets);
     q = queue_create(-1);
     //graph_setup();
-    if(targets == NULL || targets[0] == NULL || strcmp(targets[0], "")){
+    //if targets is NULL or empty, find first
+    if(targets == NULL || targets[0] == NULL){
         char* target = get_first_target(makefile);
         compute(target);
         free(target);

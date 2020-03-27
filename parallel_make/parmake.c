@@ -80,6 +80,50 @@ vector* get_command_list(char* target){
     return commands;
 }
 
+void run_commands(rule_t* rule){
+    for(size_t j = 0; j < vector_size(rule->commands); j++){
+        int return_val = system(vector_get(rule->commands, j));
+        //if command failed
+        if(return_val != 0){
+            rule->state = FAILED;
+            return;
+        }
+    }
+    if(rule->state != FAILED){
+        rule->state = COMPLETED;
+    }
+}
+
+int check_failed_children(rule_t* rule, vector* dependencies){
+    if(rule->state == INCOMPLETE){
+        return 0;
+    }
+    for(size_t k = 0; k < vector_size(dependencies); k++){
+        rule_t * rule_k = (rule_t*)graph_get_vertex_value(g, vector_get(dependencies, k));
+        if(rule_k->state == FAILED){
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int check_modf_times(rule_t * rule, vector* dependencies){
+    struct stat current_info;
+    stat(rule->target, &current_info);
+    for(size_t j = 0; j < vector_size(dependencies); j++){
+        struct stat dep_info;
+        stat(vector_get(dependencies, j), &dep_info);
+        // printf("dep time: %s\n", asctime(gmtime(&dep_info.st_mtime)));
+        // printf("rule time: %s\n", asctime(gmtime(&current_info.st_mtime)));
+        // printf("time diff: %f\n", diff);
+        if(difftime(dep_info.st_mtime, current_info.st_mtime) > 1.0){
+            return 1;
+        }
+    }
+    rule->state = 1;
+    return 0;
+}
+
 void* compute(void* input){
     char* target = (char*)input;
     vector* targets = get_command_list(target);
@@ -91,70 +135,41 @@ void* compute(void* input){
     for(size_t i = 0; i < vector_size(targets); i++){
         char* current = (char*)vector_get(targets, i);
         rule_t * rule = (rule_t *)graph_get_vertex_value(g, current);
-        //printf("current: %s\n", current);
+        //printf("rule target: %s\n", current);
         //check if rule has already been processed
         if(rule->state != INCOMPLETE){
             continue;
         }
-        //check if rule's child dependencies have failed
-        vector* neigh = graph_neighbors(g, current);
-        for(size_t k = 0; k < vector_size(neigh); k++){
-            rule_t * rule_k = (rule_t*)graph_get_vertex_value(g, vector_get(neigh, k));
-            if(rule_k->state == FAILED){
-                rule->state = FAILED;
-                break;
-            }
-        }
-        vector_destroy(neigh);
-        if(rule->state == FAILED){
+        vector* dependencies = graph_neighbors(g, current);
+        //check if depedencies failed
+        if(check_failed_children(rule, dependencies)){
+            rule->state = FAILED;
+            vector_destroy(dependencies);
             continue;
         }
-        int run_all_commands = 1;
-        //check if file exists on disk:
-        if(access(current, F_OK) == 0){
-            for(size_t j = 0; j < vector_size(rule->commands); j++){
-                //check if rule depends on something NOT on disk
-                if(access(vector_get(rule->commands, j), F_OK) != 0){
-                    run_all_commands = 0;
-                    break;
-                }
-            }
+        //if target is not on disk, run commands
+        if(access(current, F_OK) != 0){
+            run_commands(rule);
         }
-        //printf("run all commands: %d\n", run_all_commands);
-        //if all dependencies are files on disk, check modf. times
-        if(run_all_commands == 0){
-            //printf("GOT TO COMPARISON\n");
-            struct stat current_info;
-            stat(current, &current_info);
-            for(size_t j = 0; j < vector_size(rule->commands); j++){
-                struct stat dep_info;
-                stat(vector_get(rule->commands, j), &dep_info);
-                float diff = difftime(dep_info.st_mtime, current_info.st_mtime);
-                // printf("dep time: %s\n", asctime(gmtime(&dep_info.st_mtime)));
-                // printf("rule time: %s\n", asctime(gmtime(&current_info.st_mtime)));
-                // printf("time diff: %f\n", diff);
-                if(diff > 1.0){
+        else{
+            int run_all_commands = 0;
+            //otherwise target must be on disk
+            for(size_t j = 0; j < vector_size(dependencies); j++){
+                //check if rule depends on something NOT on disk
+                if(access(vector_get(dependencies, j), F_OK) != 0){
                     run_all_commands = 1;
                     break;
                 }
             }
-        }
-        if(run_all_commands == 0){
-            rule->state = COMPLETED;
-            continue;
-        }
-        //otherwise:
-        for(size_t j = 0; j < vector_size(rule->commands); j++){
-            int return_val = system(vector_get(rule->commands, j));
-            //if command failed
-            if(return_val != 0){
-                rule->state = FAILED;
-                break;
+            //if all dependencies are files on disk, check modf. times
+            if(run_all_commands == 0){
+                run_all_commands = check_modf_times(rule, dependencies);
+            }
+            else{
+                run_commands(rule);
             }
         }
-        if(rule->state != FAILED){
-            rule->state = COMPLETED;
-        }
+        vector_destroy(dependencies);
     }
     vector_destroy(targets);
     return NULL;

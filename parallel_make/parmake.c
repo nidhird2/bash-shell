@@ -151,8 +151,10 @@ void* compute(void* input){
         }
         else{
             int run_all_commands = 0;
+            vector* all_dependencies = get_command_list(current);
+            vector_pop_back(all_dependencies);
             //otherwise target must be on disk
-            for(size_t j = 0; j < vector_size(dependencies); j++){
+            for(size_t j = 0; j < vector_size(all_dependencies); j++){
                 //check if rule depends on something NOT on disk
                 if(access(vector_get(dependencies, j), F_OK) != 0){
                     run_all_commands = 1;
@@ -161,11 +163,12 @@ void* compute(void* input){
             }
             //if all dependencies are files on disk, check modf. times
             if(run_all_commands == 0){
-                run_all_commands = check_modf_times(rule, dependencies);
+                run_all_commands = check_modf_times(rule, all_dependencies);
             }
             if(run_all_commands){
                 run_commands(rule);
             }
+            //vector_destroy(all_dependencies);
         }
         vector_destroy(dependencies);
     }

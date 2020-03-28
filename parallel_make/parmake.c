@@ -95,7 +95,7 @@ void run_commands(rule_t* rule){
 }
 
 int check_failed_children(rule_t* rule, vector* dependencies){
-    if(rule->state == INCOMPLETE){
+    if(rule->state != INCOMPLETE){
         return 0;
     }
     for(size_t k = 0; k < vector_size(dependencies); k++){

@@ -89,9 +89,7 @@ void run_commands(rule_t* rule){
             return;
         }
     }
-    if(rule->state != FAILED){
-        rule->state = COMPLETED;
-    }
+    rule->state = COMPLETED;
 }
 
 int check_failed_children(rule_t* rule, vector* dependencies){
@@ -165,7 +163,7 @@ void* compute(void* input){
             if(run_all_commands == 0){
                 run_all_commands = check_modf_times(rule, dependencies);
             }
-            else{
+            if(run_all_commands){
                 run_commands(rule);
             }
         }

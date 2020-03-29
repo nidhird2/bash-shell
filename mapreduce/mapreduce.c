@@ -64,6 +64,7 @@ int main(int argc, char **argv) {
     // Start a splitter process for each mapper.m
     char** indexes = get_indexes(map_count);
     char* splitter_name = "./splitter";
+    pid_t split_pids[map_count];
     for(size_t i = 0; i < map_count; i++){
         pid_t pid = fork();
         if(pid == 0){
@@ -74,9 +75,11 @@ int main(int argc, char **argv) {
         }
         else{
             close(map_fds[i][1]);
+            split_pids[i] = pid;
         }
     }
     // Start all the mapper processes.
+    pid_t map_pids[map_count];
     for(size_t i = 0; i < map_count; i++){
         pid_t pid = fork();
         if(pid == 0){
@@ -89,6 +92,7 @@ int main(int argc, char **argv) {
         }
         else{
             close(map_fds[i][0]);
+            map_pids[i] = pid;
         }
     }
     close(reducer_fd[1]);
@@ -112,8 +116,34 @@ int main(int argc, char **argv) {
     close(reducer_fd[0]);
 
     // Print nonzero subprocess exit codes.
+    //check split status codes
+    for(size_t i  = 0; i < map_count; i++){
+        int status2;
+        waitpid(split_pids[i], &status2, 0);
+        if(WIFEXITED(status2) && WEXITSTATUS(status2) ==0){
+            continue;
+        }
+        char example[300];
+        strcpy(example, "./splitter");
+        strcat(example, input_file_name);
+        strcat(example, argv[5]);
+        strcat(example, indexes[i]);
+        print_nonzero_exit_status(reducer_name, WEXITSTATUS(status2));
+    }
+    //check map status codes
+    for(size_t i  = 0; i < map_count; i++){
+        int status2;
+        waitpid(map_pids[i], &status2, 0);
+        if(WIFEXITED(status2) && WEXITSTATUS(status2) != 0){
+            print_nonzero_exit_status(mapper_name, WEXITSTATUS(status2));
+        }
+    }
+    if(WIFEXITED(status) && WEXITSTATUS(status) !=0){
+        print_nonzero_exit_status(reducer_name, WEXITSTATUS(status));
+    }
 
     // Count the number of lines in the output file.
+    print_num_lines(output_file_name);
     free(indexes);
     return 0;
 }

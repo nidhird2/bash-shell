@@ -114,11 +114,10 @@ int check_modf_times(rule_t * rule, vector* dependencies){
         // printf("dep time: %s\n", asctime(gmtime(&dep_info.st_mtime)));
         // printf("rule time: %s\n", asctime(gmtime(&current_info.st_mtime)));
         // printf("time diff: %f\n", diff);
-        if(difftime(dep_info.st_mtime, current_info.st_mtime) > 1.0){
+        if(difftime(dep_info.st_mtime, current_info.st_mtime) >= 1){
             return 1;
         }
     }
-    rule->state = 1;
     return 0;
 }
 
@@ -145,18 +144,19 @@ void* compute(void* input){
             vector_destroy(dependencies);
             continue;
         }
-        //if target is not on disk, run commands
+        //if rule name is not file on disk, run commands
         if(access(current, F_OK) != 0){
             run_commands(rule);
         }
         else{
             int run_all_commands = 0;
             vector* all_dependencies = get_command_list(current);
+            //remove current rule from list
             vector_pop_back(all_dependencies);
             //otherwise target must be on disk
             for(size_t j = 0; j < vector_size(all_dependencies); j++){
                 //check if rule depends on something NOT on disk
-                if(access(vector_get(dependencies, j), F_OK) != 0){
+                if(access(vector_get(all_dependencies, j), F_OK) != 0){
                     run_all_commands = 1;
                     break;
                 }
@@ -165,23 +165,20 @@ void* compute(void* input){
             if(run_all_commands == 0){
                 run_all_commands = check_modf_times(rule, all_dependencies);
             }
+            //run commands or mark as completed
             if(run_all_commands){
                 run_commands(rule);
             }
-            //vector_destroy(all_dependencies);
+            else{
+                rule->state = COMPLETED;
+            }
+            vector_destroy(all_dependencies);
         }
         vector_destroy(dependencies);
     }
     vector_destroy(targets);
     return NULL;
 }
-
-// char* get_first_target(char* makefile){
-//     vector* neighbors = graph_neighbors(g, "");
-//     char* result = (char*)vector_pop_back(neighbors);
-//     free(neighbors);
-//     return result;
-// }
 
 int parmake(char *makefile, size_t num_threads, char **targets) {
     // good luck!

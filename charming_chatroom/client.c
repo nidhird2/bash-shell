@@ -30,6 +30,9 @@ void close_program(int signal);
  */
 void close_server_connection() {
     // Your code here
+    pthread_cancel(threads[0]);
+    pthread_cancel(threads[1]);
+    close(serverSocket);
 }
 
 /**
@@ -45,14 +48,31 @@ int connect_to_server(const char *host, const char *port) {
     /*QUESTION 1*/
     /*QUESTION 2*/
     /*QUESTION 3*/
+    int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if(sock_fd == -1){
+        perror(NULL);
+        exit(1);
+    }
 
     /*QUESTION 4*/
     /*QUESTION 5*/
+    struct addrinfo hints, *result;
+    memset(&hints, 0, sizeof(struct addrinfo));
 
     /*QUESTION 6*/
+    int s = getaddrinfo (host, port, &hints, &result);
+    if (s != 0) {
+        fprintf(stderr, "%s\n", gai_strerror(s));
+        exit(1);
+    }
 
     /*QUESTION 7*/
-    return -1;
+    if(connect(sock_fd, result->ai_addr, result->ai_addrlen) != 0){
+        perror(NULL);
+        exit(1);
+    }
+    freeaddrinfo(result);
+    return sock_fd;
 }
 
 typedef struct _thread_cancel_args {

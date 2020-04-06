@@ -34,6 +34,7 @@ static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
  */
 void close_server() {
     endSession = 1;
+    close(serverSocket);
     // add any additional flags here you want.
 }
 
@@ -74,20 +75,85 @@ void cleanup() {
  *    - fprtinf to stderr for getaddrinfo
  *    - perror() for any other call
  */
+
+// assumes the thread already obtained the mutex
+int findsIndex() {
+    for(int i = 0; i < MAX_CLIENTS; i++){
+        if(clients[i] == -1){
+            return i;
+        }
+    }
+    return MAX_CLIENTS-1;
+}
+
 void run_server(char *port) {
     /*QUESTION 1*/
     /*QUESTION 2*/
     /*QUESTION 3*/
+    int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if(sock_fd == -1){
+        perror(NULL);
+        exit(1);
+    }
 
     /*QUESTION 8*/
+    int optval = 1;
+    int res = setsockopt(sock_fd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+    if(res == -1){
+        perror(NULL);
+        exit(1);
+    }
 
     /*QUESTION 4*/
     /*QUESTION 5*/
     /*QUESTION 6*/
+    struct addrinfo hints, *result;
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    int s = getaddrinfo(NULL, port, &hints, &result);
+    if (s != 0) {
+        fprintf(stderr, "%s\n", gai_strerror(s));
+        exit(1);
+    }
 
     /*QUESTION 9*/
+    if (bind(sock_fd, result->ai_addr, result->ai_addrlen) != 0) {
+        perror(NULL);
+        exit(1);
+    }
 
     /*QUESTION 10*/
+    if (listen(sock_fd, 10) != 0) {
+        perror(NULL);
+        exit(1);
+    }
+    //store socket
+    freeaddrinfo(result);
+    serverSocket = sock_fd;
+    for(int i = 0; i < MAX_CLIENTS; i++){
+        clients[i] = -1;
+    }
+    
+    while(!endSession){
+        int client_fd = accept(sock_fd, NULL, NULL);
+        if(client_fd == -1){
+            perror(NULL);
+            exit(-1);
+        }
+        printf("Connection made: client_fd=%d\n", client_fd);
+        pthread_mutex_lock(&mutex);
+        if(clientsCount >= MAX_CLIENTS){
+            shutdown(client_fd, SHUT_WR);
+        }
+        intptr_t client_id = findsIndex();
+        clientsCount++;
+        clients[client_id] = client_fd;
+        pthread_mutex_unlock(&mutex);
+        pthread_t tid;
+        pthread_create(&tid, NULL, process_client, (void*)client_id);
+    }
 }
 
 /**

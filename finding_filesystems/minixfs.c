@@ -109,6 +109,32 @@ ssize_t minixfs_virtual_read(file_system *fs, const char *path, void *buf,
                              size_t count, off_t *off) {
     if (!strcmp(path, "info")) {
         // TODO implement the "info" virtual file here
+        //mchar result[300];
+        unsigned long used = 0;
+        unsigned long empty = 0;
+        char* map = GET_DATA_MAP(fs->meta);
+        for(uint64_t i=0; i<fs->meta->dblock_count;i++){
+          if(map[i]==1){
+            used++;
+          }
+          else{
+            empty++;
+          }
+        }
+        char *info;
+        asprintf(&info, "Free blocks: %lu\nUsed blocks: %lu\n", used, empty);
+        if((unsigned long)*off > strlen(info)){
+            return 0;
+        }
+        size_t amount_copy = count;
+        //if trying to copy past string, only copy til end of string
+        if((unsigned long)*off + count > strlen(info)){
+            amount_copy = strlen(info) - *off;
+        }
+        memcpy(buf, info + *off, amount_copy);
+        free(info);
+        *off += amount_copy;
+        return amount_copy;
     }
     // TODO implement your own virtual file here
     errno = ENOENT;

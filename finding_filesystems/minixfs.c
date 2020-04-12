@@ -7,7 +7,9 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
+//ssize_t minixfs_write_inode(file_system*, inode*, const void*, size_t, off_t*);
 /**
  * Virtual paths:
  *  Add your new virtual endpoint to minixfs_virtual_path_names
@@ -42,7 +44,8 @@ int minixfs_chmod(file_system *fs, char *path, int new_permissions) {
         errno = ENOENT;
         return -1;
     }
-    current->mode |= new_permissions << RWX_BITS_NUMBER;
+    int type = current->mode >> RWX_BITS_NUMBER;
+    current->mode = (type << RWX_BITS_NUMBER) | new_permissions;
 
     //update time
     clock_gettime(CLOCK_REALTIME, &current->ctim);
@@ -57,10 +60,10 @@ int minixfs_chown(file_system *fs, char *path, uid_t owner, gid_t group) {
         errno = ENOENT;
         return -1;
     }
-    if(owner != (current->uid - 1)){
+    if(owner != (uid_t) - 1){
         current->uid = owner;
     }
-    if(group != (current->gid - 1)){
+    if(group != (uid_t) - 1){
         current->gid = group;
     }
     clock_gettime(CLOCK_REALTIME, &current->ctim);
@@ -85,25 +88,20 @@ inode *minixfs_create_inode_for_path(file_system *fs, const char *path) {
     loc.name = strdup(filename);
     //make_string_from_dirent(dirstr, loc);
     init_inode(parent, new);
-    unsigned long temp = parent->size / sizeof(data_block_number);
-    size_t offset = parent->size - (temp * sizeof(data_block_number));
-    minixfs_min_blockcount(fs, path, FILE_NAME_ENTRY / sizeof(data_block));
 
-    char* use;
+    //find parent path
+    size_t ppath_len = strlen(path) - strlen(filename);
+    char* parent_path = (char*)malloc(ppath_len);
+    memcpy(parent_path, path, ppath_len - 1);
+    parent_path[ppath_len - 1] = '\0';
+    printf("filename: %s\n", filename);
+    printf("path: %s\n", path);
+    printf("parent path: %s\n", parent_path);
 
-    if(temp < NUM_DIRECT_BLOCKS){
-        use = fs->data_root[parent->direct[temp]].data + offset;
-    }
-    else if (temp < NUM_DIRECT_BLOCKS + NUM_INDIRECT_BLOCKS){
-        temp -= NUM_DIRECT_BLOCKS;
-        data_block ind = fs->data_root[parent->indirect];
-        data_block_number* ref = (data_block_number*)(&ind) + temp;
-        use = fs->data_root[parent->direct[*ref]].data + offset;
-    }
-    else{
-        return NULL;
-    }
+    char* use = NULL;
     make_string_from_dirent(use, loc);
+    off_t s = (long)parent->size;
+    minixfs_write(fs, parent_path, use, strlen(use), &s);
     return new;
 }
 
@@ -125,17 +123,14 @@ ssize_t minixfs_write(file_system *fs, const char *path, const void *buf,
         minixfs_create_inode_for_path(fs, path);
         current = get_inode(fs, path);
     }
+    size_t need = count + *off;
+    size_t blocks_needed = need / (sizeof(data_block));
     //filesize cannot handle req
-    if(current->size + count + *off > ((NUM_DIRECT_BLOCKS+NUM_INDIRECT_BLOCKS) * sizeof(data_block))){
+    if(blocks_needed > (NUM_DIRECT_BLOCKS+NUM_INDIRECT_BLOCKS)){
         errno = ENOSPC;
         return -1;
     }
-    //off is greater than end of file
-    if((unsigned long)*off >= current->size){
-        return 0;
-    }
-    size_t need = count + *off + current->size;
-    int blocks_needed = need / (sizeof(data_block));
+    //cannot allocate enough blocks
     if(minixfs_min_blockcount(fs, path, blocks_needed) == -1){
         errno = ENOSPC;
         return -1;
@@ -145,60 +140,76 @@ ssize_t minixfs_write(file_system *fs, const char *path, const void *buf,
     size_t idx = *off / (16 * KILOBYTE);
     size_t buf_offset = 0;
     size_t buf_left = count;
-    size_t ind_off = 0;
+    size_t data_offset = 0;
     data_block temp;
-    //update new size
-    if(*off + count > current->size){
-        current->size = *off + count;
-    }
+    size_t amount_to_copy = 0;
     if(idx < NUM_DIRECT_BLOCKS){
         temp = fs->data_root[current->direct[idx]];
-    }
-    else{
-        ind_off = idx - NUM_DIRECT_BLOCKS;
-        data_block ind = fs->data_root[current->indirect];
-        data_block_number* ref = (data_block_number*)(&ind) + ind_off;
-        temp = fs->data_root[current->direct[*ref]];
-        ind_off++;
-    }
-    if(*off + count < (16 * KILOBYTE)){
-        memcpy(temp.data + *off, buf, count);
-        *off += count;
-        return count;
-    }
-    size_t amount_copy = (16 * KILOBYTE) - *off;
-    memcpy(temp.data + *off, buf, amount_copy);
-    buf_offset += amount_copy;
-    buf_left -= amount_copy;
-
-    if(idx < NUM_DIRECT_BLOCKS){
-        for(int i = idx + 1; i < NUM_DIRECT_BLOCKS; i++){
-            amount_copy = (16 * KILOBYTE);
-            if(buf_left < amount_copy){
-                amount_copy = buf_left;
+        for(int i = idx; i < NUM_DIRECT_BLOCKS; i++){
+            temp = fs->data_root[current->direct[i]];
+            //offset is in this block
+            if(buf_offset == 0){
+                data_offset = *off % (16 * KILOBYTE);
             }
-            memcpy(temp.data, buf + buf_offset, amount_copy);
-            buf_offset += amount_copy;
-            buf_left -= amount_copy;
+            else{
+                data_offset = 0;
+            }
+            // if end occurs in this block
+            if(data_offset + buf_left < (16 * KILOBYTE)){
+                amount_to_copy = count;
+            }
+            // else copy rest of block
+            else{
+                amount_to_copy = (16 * KILOBYTE) - data_offset;
+            }
+            memcpy(temp.data + data_offset, buf + buf_offset, amount_to_copy);
+            buf_offset += amount_to_copy;
+            buf_left -= amount_to_copy;
+            //check if done writing
             if(buf_left == 0){
                 *off += count;
+                //update new size!
+                if(current->size < (*off + count)){
+                    current->size = *off + count;
+                }
                 return count;
             }
         }
     }
-    data_block ind = fs->data_root[current->indirect];
-    for(size_t i = ind_off; i < NUM_INDIRECT_BLOCKS; i++){
-        data_block_number* ref = (data_block_number*)(&ind) + ind_off;
-        temp = fs->data_root[current->direct[*ref]];
-        amount_copy = (16 * KILOBYTE);
-        if(buf_left < amount_copy){
-            amount_copy = buf_left;
+    int indirect_idx = 0;
+    if(idx >= NUM_DIRECT_BLOCKS){
+        indirect_idx = idx - NUM_DIRECT_BLOCKS;
+    }
+    data_block indirect = fs->data_root[current->indirect];
+    for(size_t i = indirect_idx; i < NUM_INDIRECT_BLOCKS; i++){
+        data_block_number* ref = (data_block_number*)(&indirect) + i;
+        temp = fs->data_root[*ref];
+        temp = fs->data_root[current->direct[i]];
+        //offset is in this block
+        if(buf_offset == 0){
+            data_offset = *off % (16 * KILOBYTE);
         }
-        memcpy(temp.data, buf + buf_offset, amount_copy);
-        buf_offset += amount_copy;
-        buf_left -= amount_copy;
+        else{
+            data_offset = 0;
+        }
+        // if end occurs in this block
+        if(data_offset + buf_left < (16 * KILOBYTE)){
+            amount_to_copy = count;
+        }
+        // else copy rest of block
+        else{
+            amount_to_copy = (16 * KILOBYTE) - data_offset;
+        }
+        memcpy(temp.data + data_offset, buf + buf_offset, amount_to_copy);
+        buf_offset += amount_to_copy;
+        buf_left -= amount_to_copy;
+        //check if done writing
         if(buf_left == 0){
             *off += count;
+            //update new size!
+            if(current->size < (*off + count)){
+                    current->size = *off + count;
+            }
             return count;
         }
     }
@@ -226,116 +237,77 @@ ssize_t minixfs_read(file_system *fs, const char *path, void *buf, size_t count,
     size_t bytes_left_to_read = current->size;
     size_t buff_off = 0;
     size_t buff_left = count;
-
-    //go through all direct blocks
-    for(int block_i = 0; block_i < NUM_DIRECT_BLOCKS; block_i++){
-        data_block temp = fs->data_root[current->direct[block_i]];
-        //offset is not in this block
-        if((unsigned long)*off > (amount_read + (16 * KILOBYTE))){
-            amount_read += (16 * KILOBYTE);
-            bytes_left_to_read -= (16 * KILOBYTE);
-        }
-        //offset was in previous block
-        else if(buff_off != 0){ 
-            size_t amount_to_copy;
-            if(buff_left > (16 * KILOBYTE) && bytes_left_to_read >(16 * KILOBYTE)){
-                amount_to_copy = (16 * KILOBYTE);
+    size_t data_offset = *off % (16 * KILOBYTE);
+    size_t idx = *off / (16 * KILOBYTE);
+    size_t amount_to_copy = 0;
+    if(idx < NUM_DIRECT_BLOCKS){
+        //go through all direct blocks
+        for(int block_i = idx; block_i < NUM_DIRECT_BLOCKS; block_i++){
+            data_block temp = fs->data_root[current->direct[block_i]];
+            //offset is in this block
+            if(buff_off == 0){
+                data_offset = *off % (16 * KILOBYTE);
             }
-            //check if end occurs in this block
             else{
-                if(buff_left < bytes_left_to_read){
-                    amount_to_copy = buff_left;
-                }
-                else{
-                    amount_to_copy = bytes_left_to_read;
-                }
+                data_offset = 0;
             }
-            memcpy(buf + buff_off, temp.data, amount_to_copy);
-            amount_read += amount_to_copy;
-            bytes_left_to_read -= amount_to_copy;
-            buff_off += amount_to_copy;
-            buff_left -= amount_to_copy;
-        }
-        //offset is in this block
-        else{
-            size_t amount_to_copy;
-            //EOF reached!
-            if (bytes_left_to_read <= (*off +count)){
-                amount_to_copy = bytes_left_to_read - *off;
+            //EOF occurs before desired count
+            if (bytes_left_to_read <= (data_offset +buff_left)){
+                amount_to_copy = bytes_left_to_read - data_offset;
             }
-            //count is also in this block!
-            else if(*off + count < (16*KILOBYTE)){
-                amount_to_copy = count;
+            //desired count occurs in block
+            else if(data_offset + count < (16*KILOBYTE)){
+                amount_to_copy = buff_left;
             }
             //copy rest of block
             else{
-                amount_to_copy = (16 * KILOBYTE) - *off;
-            }
-            memcpy(buf + buff_off, temp.data + *off, amount_to_copy);
-            amount_read += (amount_to_copy + *off);
-            bytes_left_to_read -= (amount_to_copy + *off);
+                amount_to_copy = (16 * KILOBYTE) - data_offset;
+                }
+            memcpy(buf + buff_off, temp.data + data_offset, amount_to_copy);
+            amount_read += (amount_to_copy + data_offset);
+            bytes_left_to_read -= (amount_to_copy + data_offset);
             buff_off += amount_to_copy;
             buff_left -= amount_to_copy;
+            //if you reached EOF or copied over count bytes
+            if(bytes_left_to_read == 0 ||buff_left == 0){
+                *off = amount_read;
+                return buff_off;
+            }
         }
-        //if you reached EOF or copied over count bytes
-        if(bytes_left_to_read == 0 ||buff_left == 0){
-            *off = amount_read;
-            return buff_off;
-        }
+    }
+    int indirect_idx = 0;
+    if(idx >= NUM_DIRECT_BLOCKS){
+        indirect_idx = idx - NUM_DIRECT_BLOCKS;
     }
     //go through indirect blocks
     data_block ind = fs->data_root[current->indirect];
-    for(size_t i = 0; i < NUM_INDIRECT_BLOCKS; i++){
+    for(size_t i = indirect_idx; i < NUM_INDIRECT_BLOCKS; i++){
         data_block_number* ref = (data_block_number*)(&ind) + i;
-        data_block temp = fs->data_root[current->direct[*ref]];
-
-        //offset is not in this block
-        if((unsigned long)*off > (amount_read + (16 * KILOBYTE))){
-            amount_read += (16 * KILOBYTE);
-            bytes_left_to_read -= (16 * KILOBYTE);
-        }
-        //offset was in previous block
-        else if(buff_off != 0){ 
-            size_t amount_to_copy;
-            if(buff_left > (16 * KILOBYTE) && bytes_left_to_read >(16 * KILOBYTE)){
-                amount_to_copy = (16 * KILOBYTE);
-            }
-            //check if end occurs in this block
-            else{
-                if(buff_left < bytes_left_to_read){
-                    amount_to_copy = buff_left;
-                }
-                else{
-                    amount_to_copy = bytes_left_to_read;
-                }
-            }
-            memcpy(buf + buff_off, temp.data, amount_to_copy);
-            amount_read += amount_to_copy;
-            bytes_left_to_read -= amount_to_copy;
-            buff_off += amount_to_copy;
-            buff_left -= amount_to_copy;
-        }
+        data_block temp = fs->data_root[*ref];
         //offset is in this block
-        else{
-            size_t amount_to_copy;
-            //EOF reached!
-            if (bytes_left_to_read <= (*off +count)){
-                amount_to_copy = bytes_left_to_read - *off;
-            }
-            //count is also in this block!
-            else if(*off + count < (16*KILOBYTE)){
-                amount_to_copy = count;
-            }
-            //copy rest of block
-            else{
-                amount_to_copy = (16 * KILOBYTE) - *off;
-            }
-            memcpy(buf + buff_off, temp.data + *off, amount_to_copy);
-            amount_read += (amount_to_copy + *off);
-            bytes_left_to_read -= (amount_to_copy + *off);
-            buff_off += amount_to_copy;
-            buff_left -= amount_to_copy;
+        if(buff_off == 0){
+            data_offset = *off % (16 * KILOBYTE);
         }
+        else{
+            data_offset = 0;
+        }
+        //EOF occurs before desired count
+        if (bytes_left_to_read <= (data_offset +buff_left)){
+            amount_to_copy = bytes_left_to_read - data_offset;
+        }
+        //desired count occurs in block
+        else if(data_offset + count < (16*KILOBYTE)){
+            amount_to_copy = buff_left;
+        }
+        //copy rest of block
+        else{
+            amount_to_copy = (16 * KILOBYTE) - data_offset;
+            }
+        memcpy(buf + buff_off, temp.data + data_offset, amount_to_copy);
+        amount_read += (amount_to_copy + data_offset);
+        bytes_left_to_read -= (amount_to_copy + data_offset);
+        buff_off += amount_to_copy;
+        buff_left -= amount_to_copy;
         //if you reached EOF or copied over count bytes
         if(bytes_left_to_read == 0 ||buff_left == 0){
             *off = amount_read;
@@ -344,3 +316,11 @@ ssize_t minixfs_read(file_system *fs, const char *path, void *buf, size_t count,
     }
     return -1;
 }
+
+// ssize_t minixfs_write_inode(file_system* fs, inode* current, const void* buf, 
+//                             size_t count, off_t *off){
+//     return -1;
+// }
+
+// ssize_t minixfs_write(file_system *fs, const char *path, const void *buf,
+//                       size_t count, off_t *off)

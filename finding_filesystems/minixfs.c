@@ -177,7 +177,7 @@ ssize_t minixfs_write(file_system *fs, const char *path, const void *buf,
             if(buf_left < amount_copy){
                 amount_copy = buf_left;
             }
-            memcpy(temp.data, buf, amount_copy);
+            memcpy(temp.data, buf + buf_offset, amount_copy);
             buf_offset += amount_copy;
             buf_left -= amount_copy;
             if(buf_left == 0){
@@ -194,7 +194,7 @@ ssize_t minixfs_write(file_system *fs, const char *path, const void *buf,
         if(buf_left < amount_copy){
             amount_copy = buf_left;
         }
-        memcpy(temp.data, buf, amount_copy);
+        memcpy(temp.data, buf + buf_offset, amount_copy);
         buf_offset += amount_copy;
         buf_left -= amount_copy;
         if(buf_left == 0){
@@ -202,7 +202,6 @@ ssize_t minixfs_write(file_system *fs, const char *path, const void *buf,
             return count;
         }
     }
-
     return -1;
 }
 

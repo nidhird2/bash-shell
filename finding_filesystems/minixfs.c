@@ -39,7 +39,7 @@ int minixfs_chmod(file_system *fs, char *path, int new_permissions) {
     inode* current = get_inode(fs, path);
     // if path/file DNE
     if(current!= NULL){
-        errno = EINTR;
+        errno = ENOENT;
         return -1;
     }
     current->mode |= new_permissions << RWX_BITS_NUMBER;
@@ -54,7 +54,7 @@ int minixfs_chown(file_system *fs, char *path, uid_t owner, gid_t group) {
     inode* current = get_inode(fs, path);
     // if path/file DNE
     if(current!= NULL){
-        errno = EINTR;
+        errno = ENOENT;
         return -1;
     }
     if(owner != (current->uid - 1)){
@@ -147,6 +147,7 @@ ssize_t minixfs_write(file_system *fs, const char *path, const void *buf,
     size_t buf_left = count;
     size_t ind_off = 0;
     data_block temp;
+    //update new size
     if(*off + count > current->size){
         current->size = *off + count;
     }
@@ -201,7 +202,6 @@ ssize_t minixfs_write(file_system *fs, const char *path, const void *buf,
             return count;
         }
     }
-
 
     return -1;
 }

@@ -282,11 +282,14 @@ ssize_t minixfs_read(file_system *fs, const char *path, void *buf, size_t count,
         char* p = fs->data_root[a].data + data_offset;
         //temp = fs->data_root[a];
         //if not the last block, copy til end of block
+        printf("data_offset: %lu\n", data_offset);
+        printf("buff offset: %lu\n", buff_off);
         if((bytes_left_to_read > sizeof(data_block)) && (buff_left > sizeof(data_block))){
             amount_to_copy = sizeof(data_block) - data_offset;
         }
         //EOF occurs before desired count
         else if (bytes_left_to_read <= (data_offset + buff_left)){
+            //printf("HERE!")
             amount_to_copy = bytes_left_to_read - data_offset;
         }
         //desired count occurs in block
@@ -294,7 +297,7 @@ ssize_t minixfs_read(file_system *fs, const char *path, void *buf, size_t count,
             amount_to_copy = buff_left;
         }
         //char* p = temp.data + data_offset;
-        //printf("p: %p\n", p);
+        printf("amount to copy: %lu\n", amount_to_copy);
         memcpy(buf + buff_off, p, amount_to_copy);
         amount_read += (amount_to_copy + data_offset);
         bytes_left_to_read -= (amount_to_copy + data_offset);
@@ -303,7 +306,7 @@ ssize_t minixfs_read(file_system *fs, const char *path, void *buf, size_t count,
         //if you reached EOF or copied over count bytes
         if(bytes_left_to_read == 0 ||buff_left == 0){
             *off = amount_read;
-            return amount_read - *off;
+            return buff_off;
         }
         data_offset = 0;
     }
@@ -337,7 +340,7 @@ ssize_t minixfs_read(file_system *fs, const char *path, void *buf, size_t count,
         //if you reached EOF or copied over count bytes
         if(bytes_left_to_read == 0 || buff_left == 0){
             *off = amount_read;
-            return amount_read - *off;
+            return buff_off;
         }
         data_offset = 0;
     }

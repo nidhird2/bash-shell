@@ -96,7 +96,7 @@ inode *minixfs_create_inode_for_path(file_system *fs, const char *path) {
     minixfs_dirent loc;
     loc.name = strdup(filename);
     loc.inode_num = new_num;
-    char* use = malloc(FILE_NAME_ENTRY + 1);
+    char* use = malloc(FILE_NAME_ENTRY);
     make_string_from_dirent(use, loc);
     // printf("use: %s\n", use);
     // printf("use len: %lu\n", strlen(use));
@@ -111,7 +111,7 @@ inode *minixfs_create_inode_for_path(file_system *fs, const char *path) {
     // printf("parent path: .%s.\n", parent_path);
 
     off_t s = (long)parent->size;
-    minixfs_write(fs, parent_path, use, strlen(use), &s);
+    minixfs_write(fs, parent_path, use, FILE_NAME_ENTRY, &s);
     free(use);
     free(loc.name);
     return new;
@@ -152,20 +152,16 @@ ssize_t minixfs_write(file_system *fs, const char *path, const void *buf,
                       size_t count, off_t *off) {
     // X marks the spot
     inode* current = get_inode(fs, path);
+    //printf("current inode: %p\n", current);
     //printf("write path: %s\n", path);
     if(current == NULL){
         current = minixfs_create_inode_for_path(fs, path);
-        if(current == NULL){
-            //printf("can't find node to write to!\n");
-            return -1;
-        }
     }
-    size_t need = count + *off;
-    size_t blocks_needed = need / (sizeof(data_block));
+
+    size_t blocks_needed = ((count + *off) / sizeof(data_block)) + 1;
     //filesize cannot handle req
     if(blocks_needed > (NUM_DIRECT_BLOCKS+NUM_INDIRECT_BLOCKS)){
         errno = ENOSPC;
-        //printf("exceeds filesize!\n");
         return -1;
     }
     //cannot allocate enough blocks
@@ -174,83 +170,78 @@ ssize_t minixfs_write(file_system *fs, const char *path, const void *buf,
         //printf("cannot allocate blocks!\n");
         return -1;
     }
-    clock_gettime(CLOCK_REALTIME, &current->atim);
-    clock_gettime(CLOCK_REALTIME, &current->mtim);
-    size_t idx = *off / (16 * KILOBYTE);
+    clock_gettime(CLOCK_REALTIME, &(current->atim));
+    clock_gettime(CLOCK_REALTIME, &(current->mtim));
+    size_t idx = *off / sizeof(data_block);
     size_t buf_offset = 0;
     size_t buf_left = count;
-    size_t data_offset = 0;
-    data_block temp;
+    size_t data_offset =  *off % sizeof(data_block);;
+    data_block_number a;
     size_t amount_to_copy = 0;
-    if(idx < NUM_DIRECT_BLOCKS){
-        temp = fs->data_root[current->direct[idx]];
-        for(int i = idx; i < NUM_DIRECT_BLOCKS; i++){
-            temp = fs->data_root[current->direct[i]];
-            //offset is in this block
-            if(buf_offset == 0){
-                data_offset = *off % (16 * KILOBYTE);
-            }
-            else{
-                data_offset = 0;
-            }
-            // if end occurs in this block
-            if(data_offset + buf_left < (16 * KILOBYTE)){
-                amount_to_copy = count;
-            }
-            // else copy rest of block
-            else{
-                amount_to_copy = (16 * KILOBYTE) - data_offset;
-            }
-            memcpy(temp.data + data_offset, buf + buf_offset, amount_to_copy);
-            buf_offset += amount_to_copy;
-            buf_left -= amount_to_copy;
-            //check if done writing
-            if(buf_left == 0){
-                *off += count;
-                //update new size!
-                if(current->size < (*off + count)){
-                    current->size = *off + count;
-                }
-                return count;
-            }
+    for(size_t i = idx; i < NUM_DIRECT_BLOCKS; i++){
+        a = current->direct[i];
+        char* p = fs->data_root[a].data + data_offset;
+        // if buffer end occurs in this block
+        if(data_offset + buf_left < sizeof(data_block)){
+            amount_to_copy = buf_left;
         }
+        // else copy rest of block
+        else{
+            amount_to_copy = sizeof(data_block) - data_offset;
+        }
+        //char* p = temp.data + data_offset;
+        //printf("p: %p\n", p);
+        memcpy(p, buf + buf_offset, amount_to_copy);
+        buf_offset += amount_to_copy;
+        buf_left -= amount_to_copy;
+        //check if done writing
+        if(buf_left == 0){
+            //update new size!
+            // printf("*off: %lu", (unsigned long)*off);
+            // printf("count: %lu", count);
+            // unsigned long sum = *off + count;
+            // printf("sum: %lu", sum);
+            // printf("sum not casted: %lu", (*off + count));
+            if(current->size < (*off + count)){
+                current->size = *off + count;
+            }
+            // printf("new size: %lu\n", current->size);
+            *off += count;
+            return count;
+        }
+        data_offset = 0;
     }
     int indirect_idx = 0;
     if(idx >= NUM_DIRECT_BLOCKS){
         indirect_idx = idx - NUM_DIRECT_BLOCKS;
     }
-    data_block indirect = fs->data_root[current->indirect];
     for(size_t i = indirect_idx; i < NUM_INDIRECT_BLOCKS; i++){
-        data_block_number* ref = (data_block_number*)(&indirect) + i;
-        temp = fs->data_root[*ref];
-        temp = fs->data_root[current->direct[i]];
-        //offset is in this block
-        if(buf_offset == 0){
-            data_offset = *off % (16 * KILOBYTE);
-        }
-        else{
-            data_offset = 0;
-        }
+        data_block* ind = &(fs->data_root[current->indirect]);
+        data_block_number* ref_table = (data_block_number*)ind;
+        data_block_number a = ref_table[i];
+        char* p = fs->data_root[a].data + data_offset;
         // if end occurs in this block
-        if(data_offset + buf_left < (16 * KILOBYTE)){
-            amount_to_copy = count;
+        if(data_offset + buf_left < sizeof(data_block)){
+            amount_to_copy = buf_left;
         }
         // else copy rest of block
         else{
-            amount_to_copy = (16 * KILOBYTE) - data_offset;
+            amount_to_copy = sizeof(data_block) - data_offset;
         }
-        memcpy(temp.data + data_offset, buf + buf_offset, amount_to_copy);
+        //printf("buf: %s\n", buf + buf_offset);
+        memcpy(p, buf + buf_offset, amount_to_copy);
         buf_offset += amount_to_copy;
         buf_left -= amount_to_copy;
         //check if done writing
         if(buf_left == 0){
-            *off += count;
             //update new size!
             if(current->size < (*off + count)){
                     current->size = *off + count;
             }
+            *off += count;
             return count;
         }
+        data_offset = 0;
     }
     //printf("yikes idk\n");
     return -1;
@@ -274,6 +265,7 @@ ssize_t minixfs_read(file_system *fs, const char *path, void *buf, size_t count,
     if((unsigned long)*off >= current->size){
         return 0;
     }
+    //printf("current size: %lu\n", current->size);
     size_t amount_read = 0;
     size_t bytes_left_to_read = current->size;
     size_t buff_off = 0;
@@ -281,73 +273,29 @@ ssize_t minixfs_read(file_system *fs, const char *path, void *buf, size_t count,
     size_t data_offset = *off % (16 * KILOBYTE);
     size_t idx = *off / (16 * KILOBYTE);
     size_t amount_to_copy = 0;
+    data_block_number a;
     // printf("read path: %s\n", path);
     // printf("bytes left to read: %lu\n", bytes_left_to_read);
     // printf("offset: %lu\n", (unsigned long)*off);
-    if(idx < NUM_DIRECT_BLOCKS){
-        //go through all direct blocks
-        for(size_t block_i = idx; block_i < NUM_DIRECT_BLOCKS; block_i++){
-            data_block temp = fs->data_root[current->direct[block_i]];
-            //offset is in this block
-            if(buff_off == 0){
-                data_offset = *off % (16 * KILOBYTE);
-            }
-            else{
-                data_offset = 0;
-            }
-            //EOF occurs before desired count
-            if (bytes_left_to_read <= (data_offset +buff_left)){
-                amount_to_copy = bytes_left_to_read - data_offset;
-            }
-            //desired count occurs in block
-            else if(data_offset + count < (16*KILOBYTE)){
-                amount_to_copy = buff_left;
-            }
-            //copy rest of block
-            else{
-                amount_to_copy = (16 * KILOBYTE) - data_offset;
-                }
-            memcpy(buf + buff_off, temp.data + data_offset, amount_to_copy);
-            amount_read += (amount_to_copy + data_offset);
-            bytes_left_to_read -= (amount_to_copy + data_offset);
-            buff_off += amount_to_copy;
-            buff_left -= amount_to_copy;
-            //if you reached EOF or copied over count bytes
-            if(bytes_left_to_read == 0 ||buff_left == 0){
-                *off = amount_read;
-                return buff_off;
-            }
-        }
-    }
-    int indirect_idx = 0;
-    if(idx >= NUM_DIRECT_BLOCKS){
-        indirect_idx = idx - NUM_DIRECT_BLOCKS;
-    }
-    //go through indirect blocks
-    data_block ind = fs->data_root[current->indirect];
-    for(size_t i = indirect_idx; i < NUM_INDIRECT_BLOCKS; i++){
-        data_block_number* ref = (data_block_number*)(&ind) + i;
-        data_block temp = fs->data_root[*ref];
-        //offset is in this block
-        if(buff_off == 0){
-            data_offset = *off % (16 * KILOBYTE);
-        }
-        else{
-            data_offset = 0;
+    for(size_t i = idx; i < NUM_DIRECT_BLOCKS; i++){
+        a = current->direct[i];
+        char* p = fs->data_root[a].data + data_offset;
+        //temp = fs->data_root[a];
+        //if not the last block, copy til end of block
+        if((bytes_left_to_read > sizeof(data_block)) && (buff_left > sizeof(data_block))){
+            amount_to_copy = sizeof(data_block) - data_offset;
         }
         //EOF occurs before desired count
-        if (bytes_left_to_read <= (data_offset +buff_left)){
+        else if (bytes_left_to_read <= (data_offset + buff_left)){
             amount_to_copy = bytes_left_to_read - data_offset;
         }
         //desired count occurs in block
-        else if(data_offset + count < (16*KILOBYTE)){
+        else{
             amount_to_copy = buff_left;
         }
-        //copy rest of block
-        else{
-            amount_to_copy = (16 * KILOBYTE) - data_offset;
-            }
-        memcpy(buf + buff_off, temp.data + data_offset, amount_to_copy);
+        //char* p = temp.data + data_offset;
+        //printf("p: %p\n", p);
+        memcpy(buf + buff_off, p, amount_to_copy);
         amount_read += (amount_to_copy + data_offset);
         bytes_left_to_read -= (amount_to_copy + data_offset);
         buff_off += amount_to_copy;
@@ -355,9 +303,45 @@ ssize_t minixfs_read(file_system *fs, const char *path, void *buf, size_t count,
         //if you reached EOF or copied over count bytes
         if(bytes_left_to_read == 0 ||buff_left == 0){
             *off = amount_read;
-            return buff_off;
+            return amount_read - *off;
         }
+        data_offset = 0;
     }
+    int indirect_idx = 0;
+    if(idx >= NUM_DIRECT_BLOCKS){
+        indirect_idx = idx - NUM_DIRECT_BLOCKS;
+    }
+    //go through indirect blocks
+    for(size_t i = indirect_idx; i < NUM_INDIRECT_BLOCKS; i++){
+        data_block* ind = &(fs->data_root[current->indirect]);
+        data_block_number* ref_table = (data_block_number*)ind;
+        data_block_number a = ref_table[i];
+        char* p = fs->data_root[a].data + data_offset;
+        //if not the last block, copy til end of block
+        if((bytes_left_to_read > sizeof(data_block)) && (buff_left > sizeof(data_block))){
+            amount_to_copy = sizeof(data_block) - data_offset;
+        }
+        //EOF occurs before desired count
+        else if (bytes_left_to_read <= (data_offset + buff_left)){
+            amount_to_copy = bytes_left_to_read - data_offset;
+        }
+        //desired count occurs in block
+        else{
+            amount_to_copy = buff_left;
+        }
+        memcpy(buf + buff_off, p, amount_to_copy);
+        amount_read += (amount_to_copy + data_offset);
+        bytes_left_to_read -= (amount_to_copy + data_offset);
+        buff_off += amount_to_copy;
+        buff_left -= amount_to_copy;
+        //if you reached EOF or copied over count bytes
+        if(bytes_left_to_read == 0 || buff_left == 0){
+            *off = amount_read;
+            return amount_read - *off;
+        }
+        data_offset = 0;
+    }
+    printf("YIKES, HERE!");
     return -1;
 }
 

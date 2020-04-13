@@ -40,7 +40,7 @@ int minixfs_virtual_path_count =
 int minixfs_chmod(file_system *fs, char *path, int new_permissions) {
     inode* current = get_inode(fs, path);
     // if path/file DNE
-    if(current!= NULL){
+    if(current == NULL){
         errno = ENOENT;
         return -1;
     }
@@ -56,7 +56,7 @@ int minixfs_chown(file_system *fs, char *path, uid_t owner, gid_t group) {
     // Land ahoy!
     inode* current = get_inode(fs, path);
     // if path/file DNE
-    if(current!= NULL){
+    if(current == NULL){
         errno = ENOENT;
         return -1;
     }

@@ -72,7 +72,7 @@ int minixfs_chown(file_system *fs, char *path, uid_t owner, gid_t group) {
 
 inode *minixfs_create_inode_for_path(file_system *fs, const char *path) {
     //if inode already exists
-    printf("create path: %s\n", path);
+    //printf("create path: %s\n", path);
     if(get_inode(fs, path) != NULL){
         //printf("inode already exits!\n");
         return NULL;

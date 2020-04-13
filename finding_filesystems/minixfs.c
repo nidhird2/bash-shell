@@ -72,36 +72,48 @@ int minixfs_chown(file_system *fs, char *path, uid_t owner, gid_t group) {
 
 inode *minixfs_create_inode_for_path(file_system *fs, const char *path) {
     //if inode already exists
+    printf("create path: %s\n", path);
     if(get_inode(fs, path) != NULL){
+        //printf("inode already exits!\n");
         return NULL;
     }
     const char* filename;
+    //if parent dir DNE
     inode* parent = parent_directory(fs, path, &filename);
-    //if not valid filename or parent dir DNE
-    if(!valid_filename(filename) || parent == NULL){
+    if(parent == NULL){
+        //printf("parent DNE\n");
         return NULL;
     }
-    inode* new = fs->inode_root + first_unused_inode(fs);
-    //char* dirstr = (char*)malloc(FILE_NAME_ENTRY);
-    minixfs_dirent loc;
-    loc.inode_num = 1;
-    loc.name = strdup(filename);
-    //make_string_from_dirent(dirstr, loc);
+    if(!valid_filename(filename)){
+        //printf("invalid filename\n");
+        return NULL;
+    }
+    inode_number new_num = first_unused_inode(fs);
+    inode* new = fs->inode_root + new_num;
     init_inode(parent, new);
+    //char* dirstr = (char*)malloc(FILE_NAME_ENTRY);
+    //make_string_from_dirent(dirstr, loc);
+    minixfs_dirent loc;
+    loc.name = strdup(filename);
+    loc.inode_num = new_num;
+    char* use = malloc(FILE_NAME_ENTRY + 1);
+    make_string_from_dirent(use, loc);
+    // printf("use: %s\n", use);
+    // printf("use len: %lu\n", strlen(use));
 
     //find parent path
-    size_t ppath_len = strlen(path) - strlen(filename);
+    size_t ppath_len = strlen(path) - strlen(filename) + 1;
     char* parent_path = (char*)malloc(ppath_len);
     memcpy(parent_path, path, ppath_len - 1);
     parent_path[ppath_len - 1] = '\0';
-    printf("filename: %s\n", filename);
-    printf("path: %s\n", path);
-    printf("parent path: %s\n", parent_path);
+    // printf("filename: .%s.\n", filename);
+    // printf("path: .%s.\n", path);
+    // printf("parent path: .%s.\n", parent_path);
 
-    char* use = NULL;
-    make_string_from_dirent(use, loc);
     off_t s = (long)parent->size;
     minixfs_write(fs, parent_path, use, strlen(use), &s);
+    free(use);
+    free(loc.name);
     return new;
 }
 
@@ -111,18 +123,13 @@ ssize_t minixfs_virtual_read(file_system *fs, const char *path, void *buf,
         // TODO implement the "info" virtual file here
         //mchar result[300];
         unsigned long used = 0;
-        unsigned long empty = 0;
         char* map = GET_DATA_MAP(fs->meta);
         for(uint64_t i=0; i<fs->meta->dblock_count;i++){
           if(map[i]==1){
             used++;
           }
-          else{
-            empty++;
-          }
         }
-        char *info;
-        asprintf(&info, "Free blocks: %lu\nUsed blocks: %lu\n", used, empty);
+        char *info = block_info_string(used); 
         if((unsigned long)*off > strlen(info)){
             return 0;
         }
@@ -145,20 +152,26 @@ ssize_t minixfs_write(file_system *fs, const char *path, const void *buf,
                       size_t count, off_t *off) {
     // X marks the spot
     inode* current = get_inode(fs, path);
+    //printf("write path: %s\n", path);
     if(current == NULL){
-        minixfs_create_inode_for_path(fs, path);
-        current = get_inode(fs, path);
+        current = minixfs_create_inode_for_path(fs, path);
+        if(current == NULL){
+            //printf("can't find node to write to!\n");
+            return -1;
+        }
     }
     size_t need = count + *off;
     size_t blocks_needed = need / (sizeof(data_block));
     //filesize cannot handle req
     if(blocks_needed > (NUM_DIRECT_BLOCKS+NUM_INDIRECT_BLOCKS)){
         errno = ENOSPC;
+        //printf("exceeds filesize!\n");
         return -1;
     }
     //cannot allocate enough blocks
     if(minixfs_min_blockcount(fs, path, blocks_needed) == -1){
         errno = ENOSPC;
+        //printf("cannot allocate blocks!\n");
         return -1;
     }
     clock_gettime(CLOCK_REALTIME, &current->atim);
@@ -239,6 +252,7 @@ ssize_t minixfs_write(file_system *fs, const char *path, const void *buf,
             return count;
         }
     }
+    //printf("yikes idk\n");
     return -1;
 }
 
@@ -252,6 +266,7 @@ ssize_t minixfs_read(file_system *fs, const char *path, void *buf, size_t count,
     //path DNE
     if(current == NULL){
         errno = ENOENT;
+        //printf("Can't find the file!\n");
         return -1;
     }
     clock_gettime(CLOCK_REALTIME, &current->atim);
@@ -266,9 +281,12 @@ ssize_t minixfs_read(file_system *fs, const char *path, void *buf, size_t count,
     size_t data_offset = *off % (16 * KILOBYTE);
     size_t idx = *off / (16 * KILOBYTE);
     size_t amount_to_copy = 0;
+    // printf("read path: %s\n", path);
+    // printf("bytes left to read: %lu\n", bytes_left_to_read);
+    // printf("offset: %lu\n", (unsigned long)*off);
     if(idx < NUM_DIRECT_BLOCKS){
         //go through all direct blocks
-        for(int block_i = idx; block_i < NUM_DIRECT_BLOCKS; block_i++){
+        for(size_t block_i = idx; block_i < NUM_DIRECT_BLOCKS; block_i++){
             data_block temp = fs->data_root[current->direct[block_i]];
             //offset is in this block
             if(buff_off == 0){

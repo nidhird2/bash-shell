@@ -102,7 +102,9 @@ int main(int argc, char **argv) {
     if(input != stdin){
         fseek(input, block_skip_input * block_size, SEEK_SET);
     } else {
-        fseek(input, block_skip_input * block_size, SEEK_SET);
+        size_t num_char = (block_skip_input * block_size) + 1;
+        char buf[num_char];
+        fgets(buf,num_char, stdin);
     }
     if(output != stdout){
         fseek(output, block_skip_output * block_size, SEEK_SET);
@@ -115,9 +117,9 @@ int main(int argc, char **argv) {
     // size_t block_skip_input = 0;
     // size_t block_skip_output = 0;
     size_t partial_copied = 0;
-    char buff[block_size];
     size_t total_bytes = 0;
     size_t bytes_read = 1;
+    char buff[block_size + 1];
 
     while(1){
         if(PRINT_IT == 1){
@@ -126,7 +128,7 @@ int main(int argc, char **argv) {
         }
         bytes_read = fread(buff, 1, block_size, input);
         total_bytes += bytes_read;
-        if(bytes_read < block_size){
+        if(bytes_read < block_size && bytes_read > 0){
             partial_copied += 1;
         }
         else{

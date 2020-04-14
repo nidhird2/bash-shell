@@ -76,12 +76,12 @@ int main(int argc, char **argv) {
         }
         opt = getopt(argc, argv, options);
     }
-    printf("input filename: %s\n", input_filename);
-    printf("output filename: %s\n", output_filename);
-    printf("block size: %lu\n", block_size);
-    printf("# blocks to read: %lu\n", total_blocks_to_copy);
-    printf("block skip input: %lu\n", block_skip_input);
-    printf("block skip output: %lu\n", block_skip_output);
+    // printf("input filename: %s\n", input_filename);
+    // printf("output filename: %s\n", output_filename);
+    // printf("block size: %lu\n", block_size);
+    // printf("# blocks to read: %lu\n", total_blocks_to_copy);
+    // printf("block skip input: %lu\n", block_skip_input);
+    // printf("block skip output: %lu\n", block_skip_output);
     if(input_filename != NULL){
         input = fopen(input_filename, "r");
         if(input == NULL){
@@ -91,14 +91,16 @@ int main(int argc, char **argv) {
     }
     if(output_filename != NULL){
         output = fopen(output_filename, "r+");
+        //file does not exist, attempt to create file
         if(output == NULL){
-            print_invalid_output(input_filename);
+            output = fopen(output_filename, "w+");
+        }
+        if(output == NULL){
+            print_invalid_output(output_filename);
             exit(1);
         }
     }
 
-    struct timespec start; 
-    clock_gettime(CLOCK_MONOTONIC, &start); 
     if(input != stdin){
         fseek(input, block_skip_input * block_size, SEEK_SET);
     } else {
@@ -121,6 +123,9 @@ int main(int argc, char **argv) {
     size_t bytes_read = 1;
     char buff[block_size + 1];
 
+    struct timespec start; 
+    clock_gettime(CLOCK_MONOTONIC, &start); 
+
     while(1){
         if(PRINT_IT == 1){
             print_progress(start, blocks_copied, partial_copied, blocks_copied, partial_copied, total_bytes);
@@ -128,11 +133,12 @@ int main(int argc, char **argv) {
         }
         bytes_read = fread(buff, 1, block_size, input);
         total_bytes += bytes_read;
-        if(bytes_read < block_size && bytes_read > 0){
-            partial_copied += 1;
-        }
-        else{
+        //printf("bytes read: %lu\n", bytes_read);
+        if(bytes_read == block_size){
             blocks_copied += 1;
+        }
+        else if (bytes_read > 0){
+            partial_copied += 1;
         }
         bytes_read = fwrite(buff, 1, bytes_read, output);
         //copied enough!
@@ -144,6 +150,8 @@ int main(int argc, char **argv) {
             break;
         }
     }
+    fclose(input);
+    fclose(output);
     print_progress(start, blocks_copied, partial_copied, blocks_copied, partial_copied, total_bytes);
     return 0;
 }

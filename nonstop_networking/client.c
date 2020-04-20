@@ -55,6 +55,7 @@ int main(int argc, char **argv) {
     //handle server esponse -> process bytes into local file (GET)
     handle_response(parsed_args, method);
     close(SOCKET_FD);
+    free(parsed_args);
     return 0;
 }
 

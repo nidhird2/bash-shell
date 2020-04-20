@@ -56,9 +56,5 @@ ssize_t write_all_to_socket(int socket, char *buffer, size_t count) {
             return num_written;
         }
     }
-    if(num_written < count){
-        print_connection_closed();
-        exit(1);
-    }
     return num_written;
 }

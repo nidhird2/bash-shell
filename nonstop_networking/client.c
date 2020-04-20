@@ -13,6 +13,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <sys/types.h>
+#include <signal.h>
 
 static int SOCKET_FD;
 //static int MAX_HEADER_SIZE = 1024;
@@ -28,11 +29,19 @@ void create_list_request(char** parsed_args);
 
 void handle_response(char** parsed_args, verb method);
 void handle_put_delete_response();
-void handle_get_response();
+void handle_get_response(char*);
 void handle_list_response();
+void handle_error();
 
+
+void connection_ended(){
+    print_connection_closed();
+    exit(1);
+}
 //Returns char* array in form of {host, port, method, remote, local, NULL}
 int main(int argc, char **argv) {
+    signal(SIGPIPE, connection_ended); 
+
     // Good luck!
     char** parsed_args = parse_args(argc, argv);
     verb method = check_args(parsed_args);
@@ -49,9 +58,36 @@ int main(int argc, char **argv) {
     return 0;
 }
 
+void handle_error(){
+    size_t to_read;
+    size_t bad_req_len = strlen(err_bad_request);
+    size_t no_such_file = strlen(err_no_such_file);
+    size_t bad_file_len = strlen(err_bad_file_size);
+    if(bad_req_len > no_such_file && bad_req_len > bad_file_len){
+        to_read = bad_req_len;
+    }
+    else if (no_such_file > bad_req_len && no_such_file > bad_file_len){
+        to_read = no_such_file;
+    }
+    else{
+        to_read = bad_file_len;
+    }
+    char buffer[to_read + 1];
+    size_t bytes_read = read_all_from_socket(SOCKET_FD, buffer, to_read);
+    if(bytes_read == 0){
+        return print_invalid_response();
+    }
+    if(buffer[bytes_read - 1] != '\n'){
+        print_invalid_response();
+    }
+    //strip last newline
+    buffer[bytes_read - 1] = '\0';
+    print_error_message(buffer);
+}
+
 void handle_response(char** parsed_args, verb method){
     if(method == GET){
-        handle_get_response();
+        handle_get_response(parsed_args[4]);
     } 
     else if (method == LIST){
         handle_list_response();
@@ -63,41 +99,138 @@ void handle_response(char** parsed_args, verb method){
 
 void handle_put_delete_response(){
     char* good = "OK\n";
-    char buffer[strlen(good) + 1];
-    size_t bytes_read = read_all_from_socket(SOCKET_FD, buffer, strlen(good));
-    buffer[bytes_read] = '\0';
-    if(strcmp(good, buffer)){
-        return print_success();
+    char* error = "ERROR\n";
+    char buffer[strlen(error) + 1];
+    size_t bytes_read = read_all_from_socket(SOCKET_FD, buffer, 3);
+    //reponse is invalid!
+    if(bytes_read < strlen(good)){
+        return print_invalid_response();
     }
     //check and print error!
+    buffer[bytes_read] = '\0';
+    //response did not return OK
+    if(strcmp(good, buffer) != 0){
+        bytes_read = read_all_from_socket(SOCKET_FD, buffer + 3, 3);
+        buffer[bytes_read + 3] = '\0';
+        //response did not return OK or ERROR
+        if(strcmp(error, buffer) != 0){
+            return print_invalid_response();
+        }
+        return handle_error();
+    }
+    //response was ok!
+    print_success();
 }
 
 void handle_list_response(){
-    char* list = "LIST\n";
-    char buffer[strlen(list) + 1];
-    size_t bytes_read = read_all_from_socket(SOCKET_FD, buffer, strlen(list));
+    char* good = "OK\n";
+    char* error = "ERROR\n";
+    char buffer[strlen(error) + 1];
+    size_t bytes_read = read_all_from_socket(SOCKET_FD, buffer, 3);
     buffer[bytes_read] = '\0';
-    if(!strcmp(list, buffer)){
+    //reponse is invalid!
+    if(bytes_read < strlen(good)){
         return print_invalid_response();
     }
+    //check and print error!
+    buffer[bytes_read] = '\0';
+    //response did not return OK
+    if(strcmp(good, buffer) != 0){
+        bytes_read = read_all_from_socket(SOCKET_FD, buffer + 3, 3);
+        buffer[bytes_read + 3] = '\0';
+        //response did not return OK or ERROR
+        if(strcmp(error, buffer) != 0){
+            return print_invalid_response();
+        }
+        return handle_error();
+    }
+    //response was ok!
     size_t list_len;
-    read_all_from_socket(SOCKET_FD, (char*)&list_len, sizeof(size_t));
-    char response_buffer[list_len + 1];
-    bytes_read = read_all_from_socket(SOCKET_FD, response_buffer, list_len + 1);
+    size_t temp = read_all_from_socket(SOCKET_FD, (char*)&list_len, sizeof(size_t));
+
+    size_t buffer_size = 1000;
+    char response_buffer[buffer_size + 1];
+    bytes_read = 0;
+
+    while(bytes_read < list_len){
+        temp = read_all_from_socket(SOCKET_FD, response_buffer, buffer_size);
+        //no more left to read!
+        if(temp == 0){
+            break;
+        }
+        bytes_read += temp;
+        response_buffer[temp] = '\0';
+        printf("%s", response_buffer);
+    }
     //too little data!
     if(bytes_read < list_len){
         return print_too_little_data();
     }
+    bytes_read += read_all_from_socket(SOCKET_FD, response_buffer, list_len + 1);
+    //too much!
     if(bytes_read > list_len){
         return print_received_too_much_data();
     }
-    response_buffer[list_len + 1] = '\0';
-    printf("%s", response_buffer);
     return;
 }
 
-void handle_get_response(){
-    
+void handle_get_response(char* local_name){
+    char* good = "OK\n";
+    char* error = "ERROR\n";
+    char buffer[strlen(error) + 1];
+    size_t bytes_read = read_all_from_socket(SOCKET_FD, buffer, 3);
+    buffer[bytes_read] = '\0';
+    //reponse is invalid!
+    if(bytes_read < strlen(good)){
+        return print_invalid_response();
+    }
+    //check and print error!
+    buffer[bytes_read] = '\0';
+    //response did not return OK
+    if(strcmp(good, buffer) != 0){
+        bytes_read = read_all_from_socket(SOCKET_FD, buffer + 3, 3);
+        buffer[bytes_read + 3] = '\0';
+        //response did not return OK or ERROR
+        if(strcmp(error, buffer) != 0){
+            return print_invalid_response();
+        }
+        return handle_error();
+    }
+    //response was ok!
+    size_t list_len;
+    size_t temp = read_all_from_socket(SOCKET_FD, (char*)&list_len, sizeof(size_t));
+
+    size_t buffer_size = 1000;
+    char response_buffer[buffer_size + 1];
+    bytes_read = 0;
+
+    FILE * f = fopen(local_name, "w");
+    //unable to open file!
+    if(!f){
+        exit(1);
+    }
+
+    while(bytes_read < list_len){
+        temp = read_all_from_socket(SOCKET_FD, response_buffer, buffer_size);
+        //no more left to read!
+        if(temp == 0){
+            break;
+        }
+        bytes_read += temp;
+        response_buffer[temp] = '\0';
+        fwrite(response_buffer, 1, temp, f);
+    }
+    fclose(f);
+    //too little data!
+    if(bytes_read < list_len){
+        return print_too_little_data();
+    }
+    bytes_read += read_all_from_socket(SOCKET_FD, response_buffer, list_len + 1);
+    //too much!
+    if(bytes_read > list_len){
+        return print_received_too_much_data();
+    }
+    return;
 }
 //build req for delete request
 void create_delete_request(char** parsed_args){
@@ -125,31 +258,41 @@ void create_list_request(char** parsed_args){
 
 //Returns char* array in form of {host, port, method, remote, local, NULL}
 void create_put_request(char** parsed_args){
+    char* local_name = parsed_args[4];
+    //open file and check that it exists
+    FILE* f = fopen(local_name, "r");
+    //local file does not exist!
+    if(!f){
+        exit(1);
+    }
     char* basis = "PUT ";
     char* remote_name = parsed_args[3];
     char* newline = "\n";
     write_all_to_socket(SOCKET_FD, basis, strlen(basis));
     write_all_to_socket(SOCKET_FD, remote_name, strlen(remote_name));
     write_all_to_socket(SOCKET_FD, newline, strlen(newline));
-    char* local_name = parsed_args[4];
 
-    FILE* f = fopen(local_name, "r");
-    //local file does not exist!
-    if(!f){
-        exit(1);
-    }
     //move fd to end, count total size
     fseek (f, 0, SEEK_END);
     size_t length = ftell(f);
+    fseek (f, 0, SEEK_SET);
     write_all_to_socket(SOCKET_FD, (char*)&length, sizeof(size_t));
     //move fd to beginning, start reading
-    fseek (f, 0, SEEK_SET);
     size_t buffer_size = 1000;
-    char buffer[buffer_size];
+    char buffer[buffer_size + 1];
     size_t total_bytes_read = 0;
     while(total_bytes_read < length){
-        total_bytes_read += fread(buffer, 1, buffer_size, f);
-        write_all_to_socket(SOCKET_FD, buffer, buffer_size);
+        size_t bytes_read = fread(buffer, 1, buffer_size, f);
+        if(bytes_read == 0){
+            break;
+        }
+        total_bytes_read += bytes_read;
+        buffer[bytes_read] = '\0';
+        size_t bytes_written = write_all_to_socket(SOCKET_FD, buffer, bytes_read);
+        if(bytes_written < bytes_read){
+            print_connection_closed();
+            exit(1);
+        }
     }
     fclose(f);
 }
@@ -175,7 +318,16 @@ void send_request(char** parsed_args, verb method){
 int connect_to_server(const char *host, const char *port) {
     int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
     if(sock_fd == -1){
-        print_connection_closed();
+        exit(1);
+    }
+    int optval = 1;
+    int res = setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
+    if(res == -1){
+        exit(1);
+    }
+    optval = 1;
+    res = setsockopt(sock_fd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+    if(res == -1){
         exit(1);
     }
     struct addrinfo hints, *result;
